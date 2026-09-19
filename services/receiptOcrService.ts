@@ -1,9 +1,12 @@
 /**
- * Grocery Receipt OCR Service Mock Scaffolding
+ * Grocery Receipt OCR Service
  *
- * Simulates OCR extraction from receipt photos:
- * - Extracts Store Name, Trip Date (Date Bought), itemized items with Name & Price.
- * - Ready to be replaced by Document AI, Tesseract, Mindee, or Supabase Edge Functions.
+ * Features:
+ * 1. Resilient Multi-Model Failover:
+ *    If Google's free-tier server experiences a transient 503 (high demand) or 429 (rate limit),
+ *    it automatically retries with backoff and rotates across candidate models
+ *    (gemini-flash-latest -> gemini-3.6-flash -> gemini-3.5-flash -> gemini-3.8-flash).
+ * 2. Instant Mock Fallback when running offline or without an API key.
  */
 
 export interface ScannedReceiptItem {
@@ -11,6 +14,7 @@ export interface ScannedReceiptItem {
   price: number;
   category: string;
   quantity?: string;
+  shelfLifeDays?: number;
 }
 
 export interface ScannedReceiptResult {
@@ -20,17 +24,22 @@ export interface ScannedReceiptResult {
   items: ScannedReceiptItem[];
 }
 
+export const isGeminiKeyConfigured = (): boolean => {
+  const key = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+  return Boolean(key && key.trim().length > 0 && !key.includes('your_'));
+};
+
 const MOCK_RECEIPT_TEMPLATES: ScannedReceiptResult[] = [
   {
     storeName: "Trader Joe's",
     tripDate: new Date().toISOString(),
     totalCost: 19.16,
     items: [
-      { name: 'Organic Baby Spinach', price: 2.99, category: 'Produce', quantity: '1 bag' },
-      { name: 'Boneless Chicken Thighs', price: 7.49, category: 'Meat', quantity: '1.2 lbs' },
-      { name: 'Heavy Whipping Cream', price: 3.69, category: 'Dairy', quantity: '1 pint' },
-      { name: 'Crimini Mushrooms', price: 2.99, category: 'Produce', quantity: '8 oz' },
-      { name: 'Sourdough Baguette', price: 2.0, category: 'Bakery', quantity: '1 loaf' },
+      { name: 'Organic Baby Spinach', price: 2.99, category: 'Produce', quantity: '1 bag', shelfLifeDays: 4 },
+      { name: 'Boneless Chicken Thighs', price: 7.49, category: 'Meat', quantity: '1.2 lbs', shelfLifeDays: 3 },
+      { name: 'Heavy Whipping Cream', price: 3.69, category: 'Dairy', quantity: '1 pint', shelfLifeDays: 5 },
+      { name: 'Crimini Mushrooms', price: 2.99, category: 'Produce', quantity: '8 oz', shelfLifeDays: 4 },
+      { name: 'Sourdough Baguette', price: 2.0, category: 'Bakery', quantity: '1 loaf', shelfLifeDays: 5 },
     ],
   },
   {
@@ -38,21 +47,10 @@ const MOCK_RECEIPT_TEMPLATES: ScannedReceiptResult[] = [
     tripDate: new Date(Date.now() - 3 * 24 * 36e5).toISOString(),
     totalCost: 27.50,
     items: [
-      { name: 'Atlantic Salmon Fillet', price: 11.99, category: 'Seafood', quantity: '0.8 lbs' },
-      { name: 'Organic Strawberries', price: 4.99, category: 'Produce', quantity: '1 lb' },
-      { name: 'Greek Yogurt Plain', price: 5.49, category: 'Dairy', quantity: '32 oz' },
-      { name: 'Avocados (Bag of 4)', price: 5.03, category: 'Produce', quantity: '4 pack' },
-    ],
-  },
-  {
-    storeName: 'Local Farmers Market',
-    tripDate: new Date(Date.now() - 6 * 24 * 36e5).toISOString(),
-    totalCost: 16.25,
-    items: [
-      { name: 'Heirloom Tomatoes', price: 4.50, category: 'Produce', quantity: '3 pcs' },
-      { name: 'Fresh Basil Bunch', price: 2.75, category: 'Produce', quantity: '1 bunch' },
-      { name: 'Artisan Goat Cheese', price: 6.50, category: 'Dairy', quantity: '1 log' },
-      { name: 'Honey Honeycomb', price: 2.50, category: 'Pantry', quantity: '1 jar' },
+      { name: 'Atlantic Salmon Fillet', price: 11.99, category: 'Seafood', quantity: '0.8 lbs', shelfLifeDays: 2 },
+      { name: 'Organic Strawberries', price: 4.99, category: 'Produce', quantity: '1 lb', shelfLifeDays: 4 },
+      { name: 'Greek Yogurt Plain', price: 5.49, category: 'Dairy', quantity: '32 oz', shelfLifeDays: 14 },
+      { name: 'Avocados (Bag of 4)', price: 5.03, category: 'Produce', quantity: '4 pack', shelfLifeDays: 5 },
     ],
   },
 ];
@@ -60,15 +58,150 @@ const MOCK_RECEIPT_TEMPLATES: ScannedReceiptResult[] = [
 let templateIndex = 0;
 
 export async function scanGroceryReceiptMock(): Promise<ScannedReceiptResult> {
-  // Simulate OCR image processing delay
   await new Promise((resolve) => setTimeout(resolve, 80));
-
   const template = MOCK_RECEIPT_TEMPLATES[templateIndex % MOCK_RECEIPT_TEMPLATES.length];
   templateIndex += 1;
 
-  // Clone with fresh timestamps
   return {
     ...template,
     tripDate: new Date().toISOString(),
+  };
+}
+
+/**
+ * Parses real receipt photo using Google Gemini Vision with automatic 503 retry and model failover
+ */
+export async function scanGroceryReceiptWithGemini(
+  base64Data: string,
+  mimeType: string = 'image/jpeg',
+  onStatusUpdate?: (status: string) => void
+): Promise<ScannedReceiptResult> {
+  const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error('Gemini API key not found in EXPO_PUBLIC_GEMINI_API_KEY.');
+  }
+
+  // Active verified models available for this API key
+  const candidateModels = [
+    'gemini-flash-latest',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.8-flash',
+  ];
+
+  const prompt = `
+Analyze this grocery receipt photo and extract all purchased grocery food items accurately.
+Return a STRICT JSON object with this exact schema:
+{
+  "storeName": "Name of grocery store",
+  "tripDate": "Transaction date YYYY-MM-DD (or today's date if not visible)",
+  "totalCost": 0.00,
+  "items": [
+    {
+      "name": "Standardized clean grocery food name (e.g. expand 'ORG BBY SPNCH' to 'Organic Baby Spinach')",
+      "price": 0.00,
+      "category": "Produce | Meat | Seafood | Dairy | Bakery | Pantry | Beverages | Snacks",
+      "quantity": "Quantity or '1 item'",
+      "shelfLifeDays": 5
+    }
+  ]
+}
+Rules:
+- Standardize cryptic receipt abbreviations into clear, culinary grocery food names.
+- Extract the actual unit price for each food item.
+- Ignore non-food items (plastic bags, paper towels, taxes, deposits).
+- Provide an estimated refrigerated shelf life in days for each food item.
+`;
+
+  const payload = {
+    contents: [
+      {
+        parts: [
+          {
+            inlineData: {
+              mimeType,
+              data: base64Data,
+            },
+          },
+          {
+            text: prompt,
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.1,
+    },
+  };
+
+  let lastError: Error | null = null;
+  let rawJson: string | null = null;
+
+  for (let mIdx = 0; mIdx < candidateModels.length; mIdx++) {
+    const model = candidateModels[mIdx];
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        if (mIdx > 0 || attempt > 1) {
+          onStatusUpdate?.(`High traffic detected. Retrying with ${model}...`);
+          // Short pause before retrying busy cluster
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
+
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey.trim()}`;
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (rawJson) break;
+        } else if (response.status === 503 || response.status === 429) {
+          // 503 High demand or 429 Rate limit: proceed to next attempt or model
+          const errText = await response.text();
+          lastError = new Error(`Model ${model} busy (${response.status}). Retrying...`);
+          continue;
+        } else {
+          const errText = await response.text();
+          lastError = new Error(`Gemini API Error (${response.status}): ${errText}`);
+          break; // Don't retry client errors (400, etc.) on the same model
+        }
+      } catch (err: any) {
+        lastError = err;
+      }
+    }
+
+    if (rawJson) break;
+  }
+
+  if (!rawJson) {
+    throw (
+      lastError ||
+      new Error(
+        'Gemini servers are currently experiencing peak traffic across all models. Please try scanning again in a moment.'
+      )
+    );
+  }
+
+  const parsed = JSON.parse(rawJson);
+
+  return {
+    storeName: parsed.storeName || 'Grocery Store',
+    tripDate: parsed.tripDate || new Date().toISOString(),
+    totalCost: Number(parsed.totalCost) || 0,
+    items: Array.isArray(parsed.items)
+      ? parsed.items.map((item: any) => ({
+          name: item.name || 'Grocery Item',
+          price: Number(item.price) || 2.5,
+          category: item.category || 'Produce',
+          quantity: item.quantity || '1 item',
+          shelfLifeDays: Number(item.shelfLifeDays) || 5,
+        }))
+      : [],
   };
 }

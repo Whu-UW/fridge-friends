@@ -12,9 +12,15 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../../context/AppContext';
 import { FridgeItemRow } from '../../services/supabase/types';
-import { scanGroceryReceiptMock, ScannedReceiptResult } from '../../services/receiptOcrService';
+import {
+  scanGroceryReceiptMock,
+  scanGroceryReceiptWithGemini,
+  isGeminiKeyConfigured,
+  ScannedReceiptResult,
+} from '../../services/receiptOcrService';
 
 export default function MyFridgeScreen() {
   const router = useRouter();
@@ -33,8 +39,10 @@ export default function MyFridgeScreen() {
   const [itemPrice, setItemPrice] = useState('');
   const [itemCategory, setItemCategory] = useState('Produce');
 
-  // Receipt Scanner Modal State
+  // Intake / Scanner Options Modal
+  const [isScannerPickerVisible, setIsScannerPickerVisible] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [scanningStatusText, setScanningStatusText] = useState('');
   const [scannedReceipt, setScannedReceipt] = useState<ScannedReceiptResult | null>(null);
   const [isAddingReceipt, setIsAddingReceipt] = useState(false);
 
@@ -90,15 +98,87 @@ export default function MyFridgeScreen() {
     setItemPrice('');
   };
 
-  const handleTriggerScan = async () => {
+  const processImageWithGemini = async (base64: string, mimeType: string = 'image/jpeg') => {
     setIsScanning(true);
+    setScanningStatusText('Analyzing receipt with Gemini...');
+    try {
+      if (isGeminiKeyConfigured()) {
+        const result = await scanGroceryReceiptWithGemini(
+          base64,
+          mimeType,
+          (msg) => setScanningStatusText(msg)
+        );
+        setScannedReceipt(result);
+      } else {
+        Alert.alert(
+          'Gemini API Key Needed',
+          'Add your key to .env.local (EXPO_PUBLIC_GEMINI_API_KEY). Using demo receipt for now!'
+        );
+        const result = await scanGroceryReceiptMock();
+        setScannedReceipt(result);
+      }
+    } catch (err: any) {
+      Alert.alert('Scan Failed', err.message || 'Could not parse receipt image with Gemini.');
+    } finally {
+      setIsScanning(false);
+      setScanningStatusText('');
+    }
+  };
+
+  const handleTakePhoto = async () => {
+    setIsScannerPickerVisible(false);
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission Required', 'Camera permission is needed to snap receipts.');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      base64: true,
+      quality: 0.7,
+    });
+
+    if (!result.canceled && result.assets[0]?.base64) {
+      await processImageWithGemini(
+        result.assets[0].base64,
+        result.assets[0].mimeType || 'image/jpeg'
+      );
+    }
+  };
+
+  const handlePickFromGallery = async () => {
+    setIsScannerPickerVisible(false);
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission Required', 'Gallery access is needed to select receipt photos.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      base64: true,
+      quality: 0.7,
+    });
+
+    if (!result.canceled && result.assets[0]?.base64) {
+      await processImageWithGemini(
+        result.assets[0].base64,
+        result.assets[0].mimeType || 'image/jpeg'
+      );
+    }
+  };
+
+  const handleUseMockDemo = async () => {
+    setIsScannerPickerVisible(false);
+    setIsScanning(true);
+    setScanningStatusText('Loading demo receipt...');
     try {
       const result = await scanGroceryReceiptMock();
       setScannedReceipt(result);
-    } catch (err) {
-      Alert.alert('Scan Failed', 'Could not parse grocery receipt.');
     } finally {
       setIsScanning(false);
+      setScanningStatusText('');
     }
   };
 
@@ -202,13 +282,18 @@ export default function MyFridgeScreen() {
       <View style={styles.actionBar}>
         <Pressable
           style={styles.scanReceiptBtn}
-          onPress={handleTriggerScan}
+          onPress={() => setIsScannerPickerVisible(true)}
           disabled={isScanning}>
           {isScanning ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
+            <View style={styles.loadingRow}>
+              <ActivityIndicator color="#FFFFFF" size="small" />
+              <Text style={styles.loadingText}>
+                {scanningStatusText || 'Scanning receipt...'}
+              </Text>
+            </View>
           ) : (
             <Text style={styles.scanReceiptBtnText}>
-              📸 Scan Grocery Receipt (OCR)
+              📸 Scan Grocery Receipt (Gemini Vision)
             </Text>
           )}
         </Pressable>
@@ -266,6 +351,41 @@ export default function MyFridgeScreen() {
         />
       </View>
 
+      {/* Scan Options Modal (Camera vs Gallery vs Mock) */}
+      <Modal
+        visible={isScannerPickerVisible}
+        animationType="fade"
+        transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.optionsModalCard}>
+            <Text style={styles.optionsModalTitle}>📸 Scan Grocery Receipt</Text>
+            <Text style={styles.optionsModalSub}>
+              {isGeminiKeyConfigured()
+                ? 'Gemini 1.5 Flash Vision active'
+                : 'Free Gemini API Key supported in .env.local'}
+            </Text>
+
+            <Pressable style={styles.optionBtnPrimary} onPress={handleTakePhoto}>
+              <Text style={styles.optionBtnPrimaryText}>📷 Take Photo with Camera</Text>
+            </Pressable>
+
+            <Pressable style={styles.optionBtnSecondary} onPress={handlePickFromGallery}>
+              <Text style={styles.optionBtnSecondaryText}>🖼️ Choose from Photo Gallery</Text>
+            </Pressable>
+
+            <Pressable style={styles.optionBtnSecondary} onPress={handleUseMockDemo}>
+              <Text style={styles.optionBtnSecondaryText}>⚡ Use Demo Sample Receipt</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.optionCancelBtn}
+              onPress={() => setIsScannerPickerVisible(false)}>
+              <Text style={styles.optionCancelText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       {/* Scanned Receipt Modal Preview */}
       <Modal
         visible={Boolean(scannedReceipt)}
@@ -275,7 +395,7 @@ export default function MyFridgeScreen() {
           <View style={styles.modalCard}>
             <Text style={styles.modalHeading}>🧾 Scanned Receipt Preview</Text>
             <Text style={styles.modalSubheading}>
-              Simulated OCR Extraction ready for LLM processing
+              Gemini Vision Extraction with Estimated Shelf Lives
             </Text>
 
             {scannedReceipt && (
@@ -296,7 +416,7 @@ export default function MyFridgeScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.receiptItemName}>{it.name}</Text>
                       <Text style={styles.receiptItemCat}>
-                        {it.category} • {it.quantity || '1 item'}
+                        {it.category} • {it.quantity || '1 item'} • {it.shelfLifeDays ? `~${it.shelfLifeDays}d shelf life` : ''}
                       </Text>
                     </View>
                     <Text style={styles.receiptItemPrice}>
@@ -398,6 +518,16 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 14,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loadingText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 13,
   },
   manualBox: {
     backgroundColor: '#FFFFFF',
@@ -547,9 +677,61 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
     padding: 16,
+  },
+  optionsModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 20,
+  },
+  optionsModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#111827',
+  },
+  optionsModalSub: {
+    fontSize: 12,
+    color: '#059669',
+    marginTop: 3,
+    marginBottom: 16,
+  },
+  optionBtnPrimary: {
+    backgroundColor: '#059669',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  optionBtnPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  optionBtnSecondary: {
+    backgroundColor: '#F3F4F6',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  optionBtnSecondaryText: {
+    color: '#1F2937',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  optionCancelBtn: {
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  optionCancelText: {
+    color: '#6B7280',
+    fontSize: 14,
+    fontWeight: '600',
   },
   modalCard: {
     backgroundColor: '#FFFFFF',
