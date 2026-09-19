@@ -42,7 +42,21 @@ export default function RootLayout() {
         <Stack.Screen
           name="recipe/[id]"
           options={{
-            title: 'Potluck Dinner Plan',
+            title: 'Recipe & Waste Impact',
+            headerBackTitle: 'Back',
+          }}
+        />
+        <Stack.Screen
+          name="friend/[id]"
+          options={{
+            title: "Friend's Fridge",
+            headerBackTitle: 'Back',
+          }}
+        />
+        <Stack.Screen
+          name="circle/[id]"
+          options={{
+            title: 'Circle Potluck Hub',
             headerBackTitle: 'Back',
           }}
         />
