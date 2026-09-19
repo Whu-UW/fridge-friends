@@ -53,13 +53,6 @@ export default function RootLayout() {
             headerBackTitle: 'Back',
           }}
         />
-        <Stack.Screen
-          name="circle/[id]"
-          options={{
-            title: 'Circle Potluck Hub',
-            headerBackTitle: 'Back',
-          }}
-        />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
       </Stack>
     </AppProvider>

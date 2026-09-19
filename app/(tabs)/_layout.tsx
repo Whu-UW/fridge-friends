@@ -45,9 +45,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="insights"
         options={{
-          title: 'Budget & Trends',
-          tabBarLabel: 'Insights',
-          tabBarIcon: () => <Text style={{ fontSize: 20 }}>📈</Text>,
+          title: 'My Profile & Impact',
+          tabBarLabel: 'Profile',
+          tabBarIcon: () => <Text style={{ fontSize: 20 }}>👤</Text>,
         }}
       />
     </Tabs>

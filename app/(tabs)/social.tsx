@@ -2,268 +2,438 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
-  FlatList,
+  ScrollView,
   Pressable,
-  Modal,
   TextInput,
   StyleSheet,
   Alert,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useApp } from '../../context/AppContext';
-import { ProfileRow, CircleComposite } from '../../services/supabase/types';
+import { useApp, FriendEntry, FeastInvite } from '../../context/AppContext';
 
 export default function SocialScreen() {
   const router = useRouter();
   const {
     friends,
-    followingFriendIds,
-    toggleFollowFriend,
-    circles,
-    createCircle,
+    feasts,
+    addFriend,
+    acceptFriendRequest,
+    removeFriend,
     getFriendFridgeItems,
-    getCircleExpiringItems,
+    toggleFeastFriendRsvp,
+    cancelFeastInvite,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'friends' | 'circles'>('friends');
+  // Add Friend Input State
+  const [newUsername, setNewUsername] = useState('');
+  const [newDisplayName, setNewDisplayName] = useState('');
+  const [isAddingVisible, setIsAddingVisible] = useState(false);
 
-  // Create Circle Modal State
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const [circleName, setCircleName] = useState('');
-  const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
+  // Filter friends: only mutual (accepted) and pending requests
+  const acceptedFriends = friends.filter((f) => f.status === 'accepted');
+  const pendingFriends = friends.filter((f) => f.status === 'pending');
 
-  const handleToggleSelectFriend = (friendId: string) => {
-    setSelectedFriendIds((prev) =>
-      prev.includes(friendId)
-        ? prev.filter((id) => id !== friendId)
-        : [...prev, friendId]
-    );
-  };
-
-  const handleCreateCircle = () => {
-    const trimmed = circleName.trim();
-    if (!trimmed) {
-      Alert.alert('Error', 'Please enter a circle name.');
-      return;
-    }
-    if (selectedFriendIds.length === 0) {
-      Alert.alert('Error', 'Please select at least one friend to join your circle.');
+  const handleAddFriendSubmit = () => {
+    const trimmedUser = newUsername.trim();
+    if (!trimmedUser) {
+      Alert.alert('Validation Error', 'Please enter a username.');
       return;
     }
 
-    createCircle(trimmed, selectedFriendIds);
-    setCircleName('');
-    setSelectedFriendIds([]);
-    setIsModalVisible(false);
-    Alert.alert('Circle Created', `"${trimmed}" is ready for meal planning!`);
-  };
-
-  const renderFriendCard = ({ item }: { item: ProfileRow }) => {
-    const isFollowing = followingFriendIds.includes(item.id);
-    const friendItems = getFriendFridgeItems(item.id);
-    const expiringCount = friendItems.filter((i) => {
-      const hours = (new Date(i.expires_at).getTime() - Date.now()) / 36e5;
-      return hours > 0 && hours <= 72;
-    }).length;
-
-    return (
-      <View style={styles.card}>
-        <View style={styles.cardInfo}>
-          <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarText}>{item.display_name.charAt(0)}</Text>
-          </View>
-          <View style={styles.friendMeta}>
-            <Text style={styles.friendName}>{item.display_name}</Text>
-            <Text style={styles.friendUsername}>@{item.username}</Text>
-            <Text style={styles.inventoryCount}>
-              🧊 {friendItems.length} items in fridge •{' '}
-              <Text style={{ color: expiringCount > 0 ? '#DC2626' : '#6B7280', fontWeight: '600' }}>
-                {expiringCount} expiring soon
-              </Text>
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.cardActions}>
-          <Pressable
-            style={[styles.followBtn, isFollowing ? styles.followingBtn : styles.notFollowingBtn]}
-            onPress={() => toggleFollowFriend(item.id)}>
-            <Text style={[styles.followBtnText, isFollowing ? styles.followingBtnText : styles.notFollowingBtnText]}>
-              {isFollowing ? 'Following' : '+ Follow'}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.viewFridgeBtn}
-            onPress={() =>
-              router.push({
-                pathname: '/friend/[id]',
-                params: { id: item.id },
-              })
-            }>
-            <Text style={styles.viewFridgeBtnText}>View Fridge →</Text>
-          </Pressable>
-        </View>
-      </View>
+    addFriend(trimmedUser, newDisplayName.trim());
+    setNewUsername('');
+    setNewDisplayName('');
+    setIsAddingVisible(false);
+    Alert.alert(
+      'Friend Request Sent',
+      `Sent friend request to @${trimmedUser.replace('@', '')}. Once accepted, you'll be mutual friends!`
     );
   };
 
-  const renderCircleCard = ({ item }: { item: CircleComposite }) => {
-    const expiringInCircle = getCircleExpiringItems(item.id, 72);
+  const handleConfirmRemoveFriend = (friend: FriendEntry) => {
+    Alert.alert(
+      'Remove Friend',
+      `Are you sure you want to remove ${friend.display_name} (@${friend.username})?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => removeFriend(friend.id),
+        },
+      ]
+    );
+  };
 
-    return (
-      <View style={styles.card}>
-        <View style={styles.circleHeader}>
-          <Text style={styles.circleTitle}>🥘 {item.name}</Text>
-          <Text style={styles.memberCountBadge}>
-            {item.members.length} members
-          </Text>
-        </View>
-
-        <Text style={styles.membersListText}>
-          Members: {item.members.map((m) => m.display_name).join(', ')}
-        </Text>
-
-        <View style={styles.circleExpiringRow}>
-          <Text style={styles.circleExpiringLabel}>
-            Combined Expiring Ingredients:
-          </Text>
-          <Text style={styles.circleExpiringCount}>
-            {expiringInCircle.length} items (&lt;72h)
-          </Text>
-        </View>
-
-        <Pressable
-          style={styles.openCircleBtn}
-          onPress={() =>
-            router.push({
-              pathname: '/circle/[id]',
-              params: { id: item.id },
-            })
-          }>
-          <Text style={styles.openCircleBtnText}>
-            Plan Circle Meal (LLM) →
-          </Text>
-        </Pressable>
-      </View>
+  const handleConfirmCancelFeast = (feast: FeastInvite) => {
+    Alert.alert(
+      'Cancel Feast',
+      `Cancel "${feast.partyName}" and withdraw invitations?`,
+      [
+        { text: 'Keep Feast', style: 'cancel' },
+        {
+          text: 'Cancel Feast',
+          style: 'destructive',
+          onPress: () => cancelFeastInvite(feast.id),
+        },
+      ]
     );
   };
 
   return (
-    <View style={styles.container}>
-      {/* Segmented Control */}
-      <View style={styles.segmentedControl}>
-        <Pressable
-          style={[styles.segmentBtn, activeTab === 'friends' && styles.segmentBtnActive]}
-          onPress={() => setActiveTab('friends')}>
-          <Text
-            style={[styles.segmentBtnText, activeTab === 'friends' && styles.segmentBtnTextActive]}>
-            Friends ({friends.length})
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* SECTION 1: Pending Feasts & Invites */}
+      <View style={styles.sectionBlock}>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionHeading}>
+            🍽️ Pending Feasts &amp; Invites ({feasts.length})
           </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.segmentBtn, activeTab === 'circles' && styles.segmentBtnActive]}
-          onPress={() => setActiveTab('circles')}>
-          <Text
-            style={[styles.segmentBtnText, activeTab === 'circles' && styles.segmentBtnTextActive]}>
-            Circles ({circles.length})
-          </Text>
-        </Pressable>
+        </View>
+        <Text style={styles.sectionSubheading}>
+          Track who has accepted your Feast Mode invitations:
+        </Text>
+
+        {feasts.length === 0 ? (
+          <View style={styles.emptyFeastsBox}>
+            <Text style={styles.emptyFeastsIcon}>🍲</Text>
+            <Text style={styles.emptyFeastsTitle}>No Pending Feasts</Text>
+            <Text style={styles.emptyFeastsSub}>
+              Tap Feast Mode on the Fridge tab to invite friends and cook a zero-waste meal together!
+            </Text>
+          </View>
+        ) : (
+          feasts.map((feast) => {
+            const acceptedCount =
+              feast.invitedFriends.filter((f) => f.status === 'accepted').length +
+              1; // Host is always accepted
+            const totalCount = feast.invitedFriends.length + 1;
+            const isAllAccepted = acceptedCount === totalCount;
+
+            return (
+              <View key={feast.id} style={styles.feastCard}>
+                {/* Header row */}
+                <View style={styles.feastHeaderRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.feastTitle}>{feast.partyName}</Text>
+                    <Text style={styles.feastRecipeName}>
+                      Recipe: {feast.recipeTitle}
+                    </Text>
+                  </View>
+                  <View style={styles.cookTimeBadge}>
+                    <Text style={styles.cookTimeText}>⏱ {feast.cookTime}</Text>
+                  </View>
+                </View>
+
+                {/* Impact Row */}
+                <View style={styles.feastImpactRow}>
+                  <Text style={styles.feastImpactText}>
+                    🌱 {feast.foodRescuedGrams}g food rescued
+                  </Text>
+                  <Text style={styles.bulletSeparator}>•</Text>
+                  <Text style={styles.feastImpactText}>
+                    💰 ${feast.dollarsSaved.toFixed(2)} group savings
+                  </Text>
+                </View>
+
+                {/* Acceptance Progress Header */}
+                <View style={styles.rsvpProgressHeader}>
+                  <Text style={styles.rsvpProgressLabel}>
+                    RSVP Status ({acceptedCount}/{totalCount} Accepted):
+                  </Text>
+                  {isAllAccepted && (
+                    <Text style={styles.readyBadge}>🎉 Ready to Cook!</Text>
+                  )}
+                </View>
+
+                {/* Attendees list */}
+                <View style={styles.attendeesList}>
+                  {/* Host row */}
+                  <View style={styles.attendeeRow}>
+                    <View style={styles.attendeeInfo}>
+                      <View style={styles.hostAvatar}>
+                        <Text style={styles.hostAvatarText}>
+                          {feast.hostName.charAt(0)}
+                        </Text>
+                      </View>
+                      <View>
+                        <Text style={styles.attendeeName}>
+                          {feast.hostName} <Text style={styles.hostTag}>(Host)</Text>
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.acceptedBadge}>
+                      <Text style={styles.acceptedBadgeText}>✓ Accepted</Text>
+                    </View>
+                  </View>
+
+                  {/* Invited friends */}
+                  {feast.invitedFriends.map((friend) => {
+                    const isAccepted = friend.status === 'accepted';
+                    return (
+                      <View key={friend.id} style={styles.attendeeRow}>
+                        <View style={styles.attendeeInfo}>
+                          {friend.avatarUrl ? (
+                            <Image
+                              source={{ uri: friend.avatarUrl }}
+                              style={styles.attendeeAvatar}
+                            />
+                          ) : (
+                            <View style={styles.attendeeAvatarPlaceholder}>
+                              <Text style={styles.attendeeAvatarText}>
+                                {friend.name.charAt(0)}
+                              </Text>
+                            </View>
+                          )}
+                          <View>
+                            <Text style={styles.attendeeName}>{friend.name}</Text>
+                            <Text style={styles.attendeeHandle}>
+                              @{friend.username}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.attendeeStatusAction}>
+                          <View
+                            style={[
+                              styles.statusPill,
+                              isAccepted
+                                ? styles.statusPillAccepted
+                                : styles.statusPillPending,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.statusPillText,
+                                isAccepted
+                                  ? styles.statusPillTextAccepted
+                                  : styles.statusPillTextPending,
+                              ]}
+                            >
+                              {isAccepted ? '✓ Accepted' : '⏳ Pending'}
+                            </Text>
+                          </View>
+
+                          {/* Interactive RSVP toggle for demo & testing */}
+                          <Pressable
+                            style={styles.simulateRsvpBtn}
+                            hitSlop={6}
+                            onPress={() =>
+                              toggleFeastFriendRsvp(feast.id, friend.id)
+                            }
+                          >
+                            <Text style={styles.simulateRsvpBtnText}>
+                              {isAccepted ? 'Set Pending' : 'Simulate Accept'}
+                            </Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+
+                {/* Feast Action Buttons */}
+                <View style={styles.feastActionsRow}>
+                  <Pressable
+                    style={styles.viewRecipeBtn}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/recipe/[id]',
+                        params: { id: feast.recipeId },
+                      })
+                    }
+                  >
+                    <Text style={styles.viewRecipeBtnText}>
+                      View Recipe &amp; Tasks ➔
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.cancelFeastBtn}
+                    onPress={() => handleConfirmCancelFeast(feast)}
+                  >
+                    <Text style={styles.cancelFeastBtnText}>Cancel</Text>
+                  </Pressable>
+                </View>
+              </View>
+            );
+          })
+        )}
       </View>
 
-      {/* Friends Tab */}
-      {activeTab === 'friends' && (
-        <View style={styles.section}>
-          <Text style={styles.sectionNotice}>
-            Follow friends to see what's in their fridge and minimize collective waste!
-          </Text>
-          <FlatList
-            data={friends}
-            keyExtractor={(item) => item.id}
-            renderItem={renderFriendCard}
-            contentContainerStyle={styles.listContent}
-          />
-        </View>
-      )}
+      <View style={styles.sectionDivider} />
 
-      {/* Circles Tab */}
-      {activeTab === 'circles' && (
-        <View style={styles.section}>
-          <Pressable
-            style={styles.createCircleBtn}
-            onPress={() => setIsModalVisible(true)}>
-            <Text style={styles.createCircleBtnText}>+ Create New Circle</Text>
-          </Pressable>
-
-          <FlatList
-            data={circles}
-            keyExtractor={(item) => item.id}
-            renderItem={renderCircleCard}
-            contentContainerStyle={styles.listContent}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyTitle}>No Circles Yet</Text>
-                <Text style={styles.emptySub}>
-                  Create a circle with friends to pool expiring ingredients for joint potlucks!
-                </Text>
-              </View>
-            }
-          />
-        </View>
-      )}
-
-      {/* Create Circle Modal */}
-      <Modal visible={isModalVisible} animationType="slide" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalHeading}>Create Meal Planning Circle</Text>
-            <Text style={styles.modalSubheading}>
-              Select friends to coordinate recipes and use up near-expiration food.
+      {/* SECTION 2: Friends (Mutual Friends & Pending Requests) */}
+      <View style={styles.sectionBlock}>
+        <View style={styles.sectionHeaderRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sectionHeading}>
+              Friends ({acceptedFriends.length})
             </Text>
+            <Text style={styles.sectionSubheading}>
+              Mutual friends can share fridges and join Feast Mode.
+            </Text>
+          </View>
+          <Pressable
+            style={styles.toggleAddBtn}
+            onPress={() => setIsAddingVisible((prev) => !prev)}
+          >
+            <Text style={styles.toggleAddBtnText}>
+              {isAddingVisible ? '✕ Cancel' : '+ Add Friend'}
+            </Text>
+          </Pressable>
+        </View>
 
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Circle Name (e.g. 4th Floor Feast)"
-              value={circleName}
-              onChangeText={setCircleName}
-              placeholderTextColor="#9CA3AF"
-            />
-
-            <Text style={styles.friendSelectHeading}>Select Members:</Text>
-            {friends.map((f) => {
-              const isSelected = selectedFriendIds.includes(f.id);
-              return (
-                <Pressable
-                  key={f.id}
-                  style={[
-                    styles.friendCheckboxRow,
-                    isSelected && styles.friendCheckboxRowSelected,
-                  ]}
-                  onPress={() => handleToggleSelectFriend(f.id)}>
-                  <Text style={styles.friendCheckboxName}>{f.display_name}</Text>
-                  <Text style={styles.friendCheckStatus}>
-                    {isSelected ? '✓ Added' : '+ Add'}
-                  </Text>
-                </Pressable>
-              );
-            })}
-
-            <View style={styles.modalBtnRow}>
+        {/* Add Friend Input Box */}
+        {isAddingVisible && (
+          <View style={styles.addFriendBox}>
+            <Text style={styles.addFriendBoxTitle}>Send Friend Request</Text>
+            <View style={styles.addFriendInputRow}>
+              <TextInput
+                style={[styles.addFriendInput, { flex: 1.5 }]}
+                placeholder="Username (e.g. jamie_chef)"
+                value={newUsername}
+                onChangeText={setNewUsername}
+                placeholderTextColor="#9CA3AF"
+                autoCapitalize="none"
+              />
+              <TextInput
+                style={[styles.addFriendInput, { flex: 1 }]}
+                placeholder="Name (Optional)"
+                value={newDisplayName}
+                onChangeText={setNewDisplayName}
+                placeholderTextColor="#9CA3AF"
+              />
               <Pressable
-                style={styles.cancelBtn}
-                onPress={() => setIsModalVisible(false)}>
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={styles.confirmCircleBtn}
-                onPress={handleCreateCircle}>
-                <Text style={styles.confirmCircleBtnText}>Create Circle</Text>
+                style={styles.submitFriendBtn}
+                onPress={handleAddFriendSubmit}
+              >
+                <Text style={styles.submitFriendBtnText}>Send</Text>
               </Pressable>
             </View>
           </View>
-        </View>
-      </Modal>
-    </View>
+        )}
+
+        {/* Pending Friend Requests (if any) */}
+        {pendingFriends.length > 0 && (
+          <View style={styles.pendingSection}>
+            <Text style={styles.pendingSectionTitle}>
+              Pending Friend Requests ({pendingFriends.length})
+            </Text>
+            {pendingFriends.map((item) => (
+              <View key={item.id} style={styles.pendingFriendCard}>
+                <View style={styles.cardInfo}>
+                  <View style={styles.avatarPlaceholderPending}>
+                    <Text style={styles.avatarText}>
+                      {item.display_name.charAt(0)}
+                    </Text>
+                  </View>
+                  <View style={styles.friendMeta}>
+                    <Text style={styles.friendName}>{item.display_name}</Text>
+                    <Text style={styles.friendUsername}>@{item.username}</Text>
+                    <Text style={styles.pendingNoticeText}>
+                      ⏳ Waiting for mutual acceptance
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.pendingActions}>
+                  <Pressable
+                    style={styles.acceptRequestBtn}
+                    onPress={() => acceptFriendRequest(item.id)}
+                  >
+                    <Text style={styles.acceptRequestBtnText}>✓ Accept</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.removeFriendBtn}
+                    onPress={() => handleConfirmRemoveFriend(item)}
+                  >
+                    <Text style={styles.removeFriendBtnText}>✕</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Mutually Added Friends */}
+        <Text style={styles.subSectionTitle}>
+          Mutual Friends ({acceptedFriends.length})
+        </Text>
+
+        {acceptedFriends.length === 0 ? (
+          <View style={styles.emptyFriendsBox}>
+            <Text style={styles.emptyFriendsText}>
+              No mutual friends yet! Use "+ Add Friend" above to send an invite.
+            </Text>
+          </View>
+        ) : (
+          acceptedFriends.map((item) => {
+            const friendItems = getFriendFridgeItems(item.id);
+            const expiringCount = friendItems.filter((i) => {
+              const hours =
+                (new Date(i.expires_at).getTime() - Date.now()) / 36e5;
+              return hours > 0 && hours <= 72;
+            }).length;
+
+            return (
+              <View key={item.id} style={styles.card}>
+                <View style={styles.cardInfo}>
+                  {item.avatar_url ? (
+                    <Image
+                      source={{ uri: item.avatar_url }}
+                      style={styles.avatarImage}
+                    />
+                  ) : (
+                    <View style={styles.avatarPlaceholder}>
+                      <Text style={styles.avatarText}>
+                        {item.display_name.charAt(0)}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.friendMeta}>
+                    <Text style={styles.friendName}>{item.display_name}</Text>
+                    <Text style={styles.friendUsername}>@{item.username}</Text>
+                    <Text style={styles.inventoryCount}>
+                      🧊 {friendItems.length} items in fridge •{' '}
+                      <Text
+                        style={{
+                          color: expiringCount > 0 ? '#DC2626' : '#6B7280',
+                          fontWeight: '600',
+                        }}
+                      >
+                        {expiringCount} expiring soon
+                      </Text>
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardActions}>
+                  <Pressable
+                    style={styles.viewFridgeBtn}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/friend/[id]',
+                        params: { id: item.id },
+                      })
+                    }
+                  >
+                    <Text style={styles.viewFridgeBtnText}>View Fridge →</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.removeFriendBtn}
+                    onPress={() => handleConfirmRemoveFriend(item)}
+                  >
+                    <Text style={styles.removeFriendBtnText}>✕</Text>
+                  </Pressable>
+                </View>
+              </View>
+            );
+          })
+        )}
+      </View>
+    </ScrollView>
   );
 }
 
@@ -271,295 +441,480 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
-    padding: 14,
   },
-  segmentedControl: {
+  content: {
+    padding: 16,
+    paddingBottom: 40,
+  },
+  sectionBlock: {
+    marginBottom: 16,
+  },
+  sectionHeaderRow: {
     flexDirection: 'row',
-    backgroundColor: '#E5E7EB',
-    borderRadius: 8,
-    padding: 3,
-    marginBottom: 12,
-  },
-  segmentBtn: {
-    flex: 1,
-    paddingVertical: 8,
+    justifyContent: 'space-between',
     alignItems: 'center',
-    borderRadius: 6,
+    marginBottom: 4,
   },
-  segmentBtnActive: {
-    backgroundColor: '#FFFFFF',
-  },
-  segmentBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  segmentBtnTextActive: {
+  sectionHeading: {
+    fontSize: 18,
+    fontWeight: '700',
     color: '#111827',
   },
-  section: {
-    flex: 1,
-  },
-  sectionNotice: {
-    fontSize: 13,
+  sectionSubheading: {
+    fontSize: 12,
     color: '#6B7280',
-    marginBottom: 10,
+    marginBottom: 12,
   },
-  listContent: {
-    paddingBottom: 24,
+  sectionDivider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 14,
   },
-  card: {
+
+  /* Pending Feasts Styles */
+  emptyFeastsBox: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    padding: 14,
-    marginBottom: 10,
-  },
-  cardInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  avatarPlaceholder: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#DBEAFE',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  avatarText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1D4ED8',
-  },
-  friendMeta: {
-    flex: 1,
-  },
-  friendName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  friendUsername: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  inventoryCount: {
-    fontSize: 12,
-    color: '#4B5563',
-    marginTop: 4,
-  },
-  cardActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  followBtn: {
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-    borderRadius: 6,
+    padding: 24,
     alignItems: 'center',
   },
-  notFollowingBtn: {
-    backgroundColor: '#2563EB',
+  emptyFeastsIcon: {
+    fontSize: 32,
+    marginBottom: 8,
   },
-  followingBtn: {
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-  },
-  followBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  notFollowingBtnText: {
-    color: '#FFFFFF',
-  },
-  followingBtnText: {
+  emptyFeastsTitle: {
+    fontSize: 15,
+    fontWeight: '700',
     color: '#374151',
   },
-  viewFridgeBtn: {
-    flex: 1,
-    backgroundColor: '#F3F4F6',
-    paddingVertical: 7,
-    borderRadius: 6,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  viewFridgeBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  createCircleBtn: {
-    backgroundColor: '#2563EB',
-    paddingVertical: 11,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  createCircleBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  circleHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  circleTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  memberCountBadge: {
-    backgroundColor: '#EFF6FF',
-    color: '#1D4ED8',
-    fontSize: 11,
-    fontWeight: '600',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  membersListText: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginTop: 4,
-  },
-  circleExpiringRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: '#FEF3C7',
-    padding: 8,
-    borderRadius: 6,
-    marginVertical: 10,
-  },
-  circleExpiringLabel: {
+  emptyFeastsSub: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#92400E',
-  },
-  circleExpiringCount: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#B45309',
-  },
-  openCircleBtn: {
-    backgroundColor: '#059669',
-    paddingVertical: 10,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  openCircleBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 13,
-  },
-  emptyContainer: {
-    padding: 32,
-    alignItems: 'center',
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#4B5563',
-  },
-  emptySub: {
-    fontSize: 13,
     color: '#9CA3AF',
     textAlign: 'center',
     marginTop: 4,
+    lineHeight: 18,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    padding: 16,
-  },
-  modalCard: {
+  feastCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 16,
+    borderWidth: 1.5,
+    borderColor: '#DBEAFE',
+    padding: 14,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  modalHeading: {
-    fontSize: 18,
-    fontWeight: 'bold',
+  feastHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  feastTitle: {
+    fontSize: 16,
+    fontWeight: '700',
     color: '#111827',
   },
-  modalSubheading: {
+  feastRecipeName: {
     fontSize: 12,
-    color: '#6B7280',
+    color: '#4B5563',
     marginTop: 2,
+  },
+  cookTimeBadge: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  cookTimeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1D4ED8',
+  },
+  feastImpactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  feastImpactText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#059669',
+  },
+  bulletSeparator: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  rsvpProgressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  rsvpProgressLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  readyBadge: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  attendeesList: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    padding: 8,
     marginBottom: 12,
   },
-  modalInput: {
-    backgroundColor: '#F3F4F6',
+  attendeeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  attendeeInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  hostAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hostAvatarText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+  attendeeAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  attendeeAvatarPlaceholder: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#D1D5DB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attendeeAvatarText: {
+    color: '#374151',
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+  attendeeName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  hostTag: {
+    fontSize: 11,
+    color: '#2563EB',
+    fontWeight: '600',
+  },
+  attendeeHandle: {
+    fontSize: 11,
+    color: '#6B7280',
+  },
+  acceptedBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  acceptedBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  attendeeStatusAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  statusPillAccepted: {
+    backgroundColor: '#DCFCE7',
+  },
+  statusPillPending: {
+    backgroundColor: '#FEF3C7',
+  },
+  statusPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  statusPillTextAccepted: {
+    color: '#166534',
+  },
+  statusPillTextPending: {
+    color: '#92400E',
+  },
+  simulateRsvpBtn: {
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#D1D5DB',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
     borderRadius: 6,
+  },
+  simulateRsvpBtnText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  feastActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 2,
+  },
+  viewRecipeBtn: {
+    flex: 1,
+    backgroundColor: '#2563EB',
+    paddingVertical: 9,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  viewRecipeBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  cancelFeastBtn: {
+    backgroundColor: '#F3F4F6',
     paddingHorizontal: 12,
     paddingVertical: 9,
-    fontSize: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelFeastBtnText: {
+    color: '#6B7280',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  /* Friends Styles */
+  toggleAddBtn: {
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  toggleAddBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  addFriendBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 12,
     marginBottom: 12,
   },
-  friendSelectHeading: {
+  addFriendBoxTitle: {
     fontSize: 13,
     fontWeight: '600',
     color: '#374151',
     marginBottom: 8,
   },
-  friendCheckboxRow: {
+  addFriendInputRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    padding: 10,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 6,
+    gap: 8,
+  },
+  addFriendInput: {
+    backgroundColor: '#F3F4F6',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    marginBottom: 6,
-  },
-  friendCheckboxRowSelected: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#93C5FD',
-  },
-  friendCheckboxName: {
-    fontSize: 14,
-    fontWeight: '600',
+    borderColor: '#D1D5DB',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 13,
     color: '#111827',
   },
-  friendCheckStatus: {
+  submitFriendBtn: {
+    backgroundColor: '#059669',
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+    borderRadius: 6,
+  },
+  submitFriendBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  subSectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  pendingSection: {
+    marginBottom: 12,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 10,
+    padding: 10,
+  },
+  pendingSectionTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#2563EB',
+    color: '#92400E',
+    marginBottom: 8,
   },
-  modalBtnRow: {
+  pendingFriendCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    padding: 10,
+    marginBottom: 6,
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
-    marginTop: 16,
+    alignItems: 'center',
   },
-  cancelBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    backgroundColor: '#F3F4F6',
+  avatarPlaceholderPending: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FDE68A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pendingNoticeText: {
+    fontSize: 11,
+    color: '#B45309',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  pendingActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  acceptRequestBtn: {
+    backgroundColor: '#059669',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 6,
   },
-  cancelBtnText: {
+  acceptRequestBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  avatarImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  avatarPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  friendMeta: {
+    flex: 1,
+  },
+  friendName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  friendUsername: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 2,
+  },
+  inventoryCount: {
+    fontSize: 11,
     color: '#4B5563',
+  },
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  viewFridgeBtn: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  viewFridgeBtnText: {
+    color: '#1D4ED8',
+    fontSize: 12,
     fontWeight: '600',
   },
-  confirmCircleBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    backgroundColor: '#2563EB',
-    borderRadius: 6,
+  removeFriendBtn: {
+    padding: 6,
   },
-  confirmCircleBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
+  removeFriendBtnText: {
+    color: '#9CA3AF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  emptyFriendsBox: {
+    padding: 24,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+  },
+  emptyFriendsText: {
+    fontSize: 13,
+    color: '#6B7280',
+    textAlign: 'center',
   },
 });

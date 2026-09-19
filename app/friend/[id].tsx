@@ -102,8 +102,8 @@ export default function FriendFridgeScreen() {
           👀 Viewing {friend.display_name}'s Shared Fridge
         </Text>
         <Text style={styles.noticeSub}>
-          Add {friend.display_name} to a circle to combine expiring ingredients
-          and cook zero-waste meals together.
+          Invite {friend.display_name} to a dinner party from your fridge to combine
+          ingredients and cook zero-waste meals together.
         </Text>
       </View>
 

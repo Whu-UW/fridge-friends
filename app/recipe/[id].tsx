@@ -59,7 +59,7 @@ export default function RecipeViewScreen() {
           <Text style={styles.cookTimeBadge}>⏱ {recipe.cookTime}</Text>
           {recipe.isCollaborative ? (
             <Text style={styles.collabBadge}>
-              👥 Circle Potluck: {recipe.circleName || 'Collaborative'}
+              👥 {recipe.circleName ? `Dinner Party: ${recipe.circleName}` : 'Collaborative Dinner Party'}
             </Text>
           ) : (
             <Text style={styles.soloBadge}>👤 Solo Waste-Reduction</Text>
