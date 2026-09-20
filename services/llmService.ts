@@ -444,8 +444,8 @@ export async function generateTopSoloRecipes(
       ingredients,
       cookingTasks,
       projectedImpact: {
-        foodRescuedGrams: Math.round(baseGrams * (1 - idx * 0.05)),
-        dollarsSaved: Number((baseDollars * (1 - idx * 0.05)).toFixed(2)),
+        foodRescuedGrams: baseGrams,
+        dollarsSaved: baseDollars,
       },
       rsvps: [currentUser.id],
       createdAt: new Date().toISOString(),
