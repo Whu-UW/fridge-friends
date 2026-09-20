@@ -1,6 +1,6 @@
 /**
  * FastAPI Backend API Client & Data Adapters
- * Target Base URL: https://fridge-friends-be.fastapicloud.dev
+ * Target Base URL: https://fridge-friends-be-144bbbd9.fastapicloud.dev
  */
 
 import {
@@ -12,8 +12,11 @@ import {
 } from './supabase/types';
 import type { FriendEntry, FeastInvite, FeastFriendStatus } from '../context/AppContext';
 
-export const BACKEND_BASE_URL =
-  process.env.EXPO_PUBLIC_BACKEND_URL || 'https://fridge-friends-be.fastapicloud.dev';
+const rawBackendUrl =
+  process.env.EXPO_PUBLIC_BACKEND_URL ||
+  'https://fridge-friends-be-144bbbd9.fastapicloud.dev';
+
+export const BACKEND_BASE_URL = rawBackendUrl.replace(/\/+$/, '');
 
 /* ============================================================================
  * Backend Types (from OpenAPI 3.1.0 specification)
@@ -23,6 +26,7 @@ export interface BackendUser {
   id: number;
   email: string;
   name: string;
+  username?: string;
   created_at: string;
 }
 

@@ -207,11 +207,11 @@ interface AppContextType {
   addCustomFeast: (feast: FeastInvite) => void;
 }
 
-const CURRENT_USER_ID = '14'; // Sam Perera (Default Backend User ID)
-const NADIA_ID = '15';
-const THEO_ID = '16';
-const MEI_ID = '17';
-const OBI_ID = '18';
+const CURRENT_USER_ID = '19'; // Sam Perera (Default Backend User ID)
+const NADIA_ID = '20';
+const THEO_ID = '21';
+const MEI_ID = '22';
+const OBI_ID = '23';
 const SAM_ID = CURRENT_USER_ID;
 const JORDAN_ID = THEO_ID;
 const TAYLOR_ID = OBI_ID;
@@ -1001,11 +1001,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setAvailableBackendUsers(users);
 
       // 2. Bind current user profile from live database
+      const samUser = users.find(
+        (u) => u.username === 'sam' || u.name.toLowerCase().includes('sam')
+      );
       const effectiveUserId = targetUserId && users.some((u) => u.id === targetUserId)
         ? targetUserId
         : (activeBackendUserId && users.some((u) => u.id === activeBackendUserId)
             ? activeBackendUserId
-            : users[0]?.id || 14);
+            : samUser?.id || users[0]?.id || 19);
 
       setActiveBackendUserId(effectiveUserId);
 
@@ -1142,7 +1145,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             authData.email
           );
         } catch (createErr: any) {
-          // The live FastAPI server at https://fridge-friends-be.fastapicloud.dev currently
+          // The live FastAPI server at https://fridge-friends-be-144bbbd9.fastapicloud.dev currently
           // returns 409 "Email already registered" for new POST /users requests.
           // Gracefully fallback to primary seed user (User #19 Sam Perera) so all live
           // groceries, friends, and feast mode endpoints continue to work smoothly.
