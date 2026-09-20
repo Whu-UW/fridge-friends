@@ -12,10 +12,34 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../context/AppContext';
+import {
+  BACKEND_BASE_URL,
+  ConnectionDiagnosticResult,
+} from '../../services/backendApi';
 
 export default function ProfileScreen() {
-  const { currentUser, recipes, feasts, updateProfile } = useApp();
+  const insets = useSafeAreaInsets();
+  const {
+    currentUser,
+    recipes,
+    feasts,
+    updateProfile,
+    backendConnected,
+    backendLatency,
+    activeBackendUserId,
+    switchBackendUser,
+    testBackendDiagnostics,
+    isPantryHardcoded,
+    isFriendsHardcoded,
+    isFeastsHardcoded,
+    isRecipesHardcoded,
+  } = useApp();
+
+  // Diagnostics State
+  const [diagnosticResult, setDiagnosticResult] = useState<ConnectionDiagnosticResult | null>(null);
+  const [isRunningTest, setIsRunningTest] = useState(false);
 
   // Profile Edit State
   const [displayName, setDisplayName] = useState(currentUser.display_name);
@@ -35,10 +59,6 @@ export default function ProfileScreen() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-
-  // Photo URL Modal or Picker State
-  const [isPhotoUrlModalVisible, setIsPhotoUrlModalVisible] = useState(false);
-  const [tempPhotoUrl, setTempPhotoUrl] = useState('');
 
   // 1. Calculate Food Rescued Metrics: Solo vs With Friends
   // Solo recipes impact
@@ -68,28 +88,29 @@ export default function ProfileScreen() {
   const co2AvoidedKg = ((totalRescuedGrams / 1000) * 2.5).toFixed(1);
   const totalMealsSaved = Math.round(totalRescuedGrams / 350);
 
-  // Profile Picture Handlers
+  // Profile Picture Handlers: Camera & Gallery ONLY (no manual URL entry)
   const handlePickPhotoFromGallery = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert(
         'Permission Required',
-        'Gallery permission is needed to update your profile picture.'
+        'Gallery permission is needed to choose a profile picture.'
       );
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.7,
-      base64: true,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
     });
 
     if (!result.canceled && result.assets[0]?.uri) {
       const newUri = result.assets[0].uri;
       setAvatarUrl(newUri);
       updateProfile({ avatar_url: newUri });
-      Alert.alert('Photo Updated', 'Your profile picture has been updated!');
+      Alert.alert('Photo Updated', 'Your profile picture has been updated from gallery!');
     }
   };
 
@@ -98,21 +119,23 @@ export default function ProfileScreen() {
     if (!permission.granted) {
       Alert.alert(
         'Permission Required',
-        'Camera permission is needed to snap a profile photo.'
+        'Camera permission is needed to take a profile photo.'
       );
       return;
     }
 
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
-      quality: 0.7,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
     });
 
     if (!result.canceled && result.assets[0]?.uri) {
       const newUri = result.assets[0].uri;
       setAvatarUrl(newUri);
       updateProfile({ avatar_url: newUri });
-      Alert.alert('Photo Updated', 'Your profile picture has been updated!');
+      Alert.alert('Photo Updated', 'Your profile picture has been updated from camera!');
     }
   };
 
@@ -120,27 +143,8 @@ export default function ProfileScreen() {
     Alert.alert('Profile Photo', 'Choose an option to update your photo:', [
       { text: '📷 Take Photo', onPress: handleTakePhotoWithCamera },
       { text: '🖼️ Choose from Gallery', onPress: handlePickPhotoFromGallery },
-      {
-        text: '🔗 Enter Image URL',
-        onPress: () => {
-          setTempPhotoUrl(avatarUrl || '');
-          setIsPhotoUrlModalVisible(true);
-        },
-      },
       { text: 'Cancel', style: 'cancel' },
     ]);
-  };
-
-  const handleSavePhotoUrl = () => {
-    const trimmed = tempPhotoUrl.trim();
-    if (!trimmed) {
-      Alert.alert('Invalid URL', 'Please enter a valid image URL.');
-      return;
-    }
-    setAvatarUrl(trimmed);
-    updateProfile({ avatar_url: trimmed });
-    setIsPhotoUrlModalVisible(false);
-    Alert.alert('Photo Updated', 'Profile image URL saved!');
   };
 
   // Profile Details Save Handler
@@ -206,6 +210,29 @@ export default function ProfileScreen() {
     );
   };
 
+  const handleRunDiagnosticTest = async () => {
+    setIsRunningTest(true);
+    try {
+      const result = await testBackendDiagnostics();
+      setDiagnosticResult(result);
+      if (result.connected) {
+        Alert.alert(
+          'Live Database Verified! ✅',
+          `Successfully connected to ${BACKEND_BASE_URL}!\n\nLatency: ${result.latencyMs}ms\nUsers in DB: ${result.usersCount}\nPantry items: ${result.groceriesCount}\nFriendships: ${result.friendsCount}`
+        );
+      } else {
+        Alert.alert(
+          'Connection Issue',
+          `Could not reach database: ${result.error || 'Server timeout'}`
+        );
+      }
+    } catch (err: any) {
+      Alert.alert('Diagnostic Error', err.message);
+    } finally {
+      setIsRunningTest(false);
+    }
+  };
+
   const handleLogOut = () => {
     Alert.alert('Log Out', 'Are you sure you want to log out of FridgeFriends?', [
       { text: 'Cancel', style: 'cancel' },
@@ -223,25 +250,51 @@ export default function ProfileScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={styles.container}
     >
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: Math.max(insets.bottom, 16) + 100 },
+        ]}
+      >
         {/* Profile Hero Header */}
         <View style={styles.heroCard}>
           <View style={styles.avatarSection}>
-            {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarPlaceholderText}>
-                  {currentUser.display_name.charAt(0)}
-                </Text>
-              </View>
-            )}
             <Pressable
-              style={styles.changePhotoBtn}
               onPress={handleOpenPhotoOptions}
+              style={styles.avatarPressable}
+              accessibilityLabel="Change profile picture"
             >
-              <Text style={styles.changePhotoBtnText}>📷 Change Photo</Text>
+              {avatarUrl ? (
+                <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+              ) : (
+                <View style={styles.avatarPlaceholder}>
+                  <Text style={styles.avatarPlaceholderText}>
+                    {currentUser.display_name.charAt(0)}
+                  </Text>
+                </View>
+              )}
+              <View style={styles.avatarBadge}>
+                <Text style={styles.avatarBadgeIcon}>📷</Text>
+              </View>
             </Pressable>
+
+            {/* Quick buttons: Gallery or Camera */}
+            <View style={styles.photoQuickRow}>
+              <Pressable
+                style={styles.photoQuickBtn}
+                onPress={handlePickPhotoFromGallery}
+                accessibilityLabel="Choose from Gallery"
+              >
+                <Text style={styles.photoQuickBtnText}>🖼️ Gallery</Text>
+              </Pressable>
+              <Pressable
+                style={styles.photoQuickBtn}
+                onPress={handleTakePhotoWithCamera}
+                accessibilityLabel="Take Photo"
+              >
+                <Text style={styles.photoQuickBtnText}>📷 Camera</Text>
+              </Pressable>
+            </View>
           </View>
 
           <View style={styles.heroMeta}>
@@ -330,6 +383,158 @@ export default function ProfileScreen() {
               </Text>
             </View>
           </View>
+        </View>
+
+        {/* Backend Live Database Status & Diagnostics */}
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>⚡ Live Database Connection</Text>
+            <View
+              style={[
+                styles.liveStatusBadge,
+                backendConnected
+                  ? styles.liveStatusConnected
+                  : styles.liveStatusOffline,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.liveStatusText,
+                  backendConnected
+                    ? styles.liveStatusTextConnected
+                    : styles.liveStatusTextOffline,
+                ]}
+              >
+                {backendConnected
+                  ? `🟢 Live (${backendLatency ?? 0}ms)`
+                  : '🟡 Offline Cache'}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.sectionSubtitle}>
+            Target: {BACKEND_BASE_URL}
+          </Text>
+
+          {/* Data Sources Breakdown */}
+          <View style={styles.dataSourcesTable}>
+            <Text style={styles.dataSourcesTableTitle}>📊 Data Sources Breakdown:</Text>
+            <View style={styles.dataSourceRow}>
+              <Text style={styles.dataSourceName}>• Pantry Groceries</Text>
+              <Text style={backendConnected ? styles.badgeDb : styles.badgeHardcoded}>
+                {backendConnected ? '🟢 Live Database' : '⚠️ Hardcoded'}
+              </Text>
+            </View>
+            <View style={styles.dataSourceRow}>
+              <Text style={styles.dataSourceName}>• Friends & Requests</Text>
+              <Text style={backendConnected ? styles.badgeDb : styles.badgeHardcoded}>
+                {backendConnected ? '🟢 Live Database' : '⚠️ Hardcoded'}
+              </Text>
+            </View>
+            <View style={styles.dataSourceRow}>
+              <Text style={styles.dataSourceName}>• Feast Mode Parties</Text>
+              <Text style={styles.badgeHardcoded}>⚠️ Hardcoded (No DB Table)</Text>
+            </View>
+            <View style={styles.dataSourceRow}>
+              <Text style={styles.dataSourceName}>• AI Rescued Recipes</Text>
+              <Text style={styles.badgeHardcoded}>⚠️ Local Generated (No DB Table)</Text>
+            </View>
+          </View>
+
+          {/* User Switcher Buttons */}
+          <Text style={styles.switcherLabel}>
+            Switch Demo Account (Test Multi-User Collaboration):
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.userSwitcherScroll}
+          >
+            {[
+              { id: 14, name: 'Sam Perera', role: 'Host' },
+              { id: 15, name: 'Nadia Khan', role: 'Mutual Friend' },
+              { id: 16, name: 'Theo Alvarez', role: 'Mutual Friend' },
+              { id: 17, name: 'Mei Tanaka', role: 'Pending Friend' },
+              { id: 18, name: 'Obi Nwachukwu', role: 'Pending Friend' },
+            ].map((u) => {
+              const isActive = activeBackendUserId === u.id;
+              return (
+                <Pressable
+                  key={u.id}
+                  style={[
+                    styles.userSwitchPill,
+                    isActive && styles.userSwitchPillActive,
+                  ]}
+                  onPress={() => switchBackendUser(u.id)}
+                >
+                  <Text
+                    style={[
+                      styles.userSwitchPillName,
+                      isActive && styles.userSwitchPillNameActive,
+                    ]}
+                  >
+                    {isActive ? '✓ ' : ''}{u.name}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.userSwitchPillRole,
+                      isActive && styles.userSwitchPillRoleActive,
+                    ]}
+                  >
+                    ID #{u.id} • {u.role}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          {/* On-Demand Diagnostics Test Button */}
+          <Pressable
+            style={[styles.testDiagnosticsBtn, isRunningTest && { opacity: 0.7 }]}
+            onPress={handleRunDiagnosticTest}
+            disabled={isRunningTest}
+          >
+            <Text style={styles.testDiagnosticsBtnText}>
+              {isRunningTest
+                ? '🔄 Querying Live Database...'
+                : '🧪 Test Live Database Connection'}
+            </Text>
+          </Pressable>
+
+          {diagnosticResult && (
+            <View style={styles.diagnosticSummaryBox}>
+              <Text style={styles.diagnosticSummaryTitle}>
+                {diagnosticResult.connected
+                  ? '✅ Database Sync Health Check: Healthy'
+                  : '❌ Database Check: Disconnected'}
+              </Text>
+              <View style={styles.diagnosticMetricsRow}>
+                <View style={styles.diagnosticMetricItem}>
+                  <Text style={styles.diagnosticMetricValue}>
+                    {diagnosticResult.latencyMs}ms
+                  </Text>
+                  <Text style={styles.diagnosticMetricLabel}>Latency</Text>
+                </View>
+                <View style={styles.diagnosticMetricItem}>
+                  <Text style={styles.diagnosticMetricValue}>
+                    {diagnosticResult.usersCount}
+                  </Text>
+                  <Text style={styles.diagnosticMetricLabel}>Users</Text>
+                </View>
+                <View style={styles.diagnosticMetricItem}>
+                  <Text style={styles.diagnosticMetricValue}>
+                    {diagnosticResult.groceriesCount}
+                  </Text>
+                  <Text style={styles.diagnosticMetricLabel}>Pantry Items</Text>
+                </View>
+                <View style={styles.diagnosticMetricItem}>
+                  <Text style={styles.diagnosticMetricValue}>
+                    {diagnosticResult.friendsCount}
+                  </Text>
+                  <Text style={styles.diagnosticMetricLabel}>Friends</Text>
+                </View>
+              </View>
+            </View>
+          )}
         </View>
 
         {/* Account Details Form (Standard Login Inputs) */}
@@ -441,41 +646,6 @@ export default function ProfileScreen() {
           <Text style={styles.logOutBtnText}>Log Out of Session</Text>
         </Pressable>
       </ScrollView>
-
-      {/* Enter Image URL Modal */}
-      {isPhotoUrlModalVisible && (
-        <View style={styles.urlModalOverlay}>
-          <View style={styles.urlModalCard}>
-            <Text style={styles.urlModalTitle}>Profile Image URL</Text>
-            <Text style={styles.urlModalSubtitle}>
-              Paste a public direct image link:
-            </Text>
-            <TextInput
-              style={styles.textInput}
-              value={tempPhotoUrl}
-              onChangeText={setTempPhotoUrl}
-              placeholder="https://images.unsplash.com/..."
-              placeholderTextColor="#9CA3AF"
-              autoCapitalize="none"
-              autoFocus
-            />
-            <View style={styles.urlModalBtnRow}>
-              <Pressable
-                style={styles.cancelModalBtn}
-                onPress={() => setIsPhotoUrlModalVisible(false)}
-              >
-                <Text style={styles.cancelModalBtnText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={styles.confirmModalBtn}
-                onPress={handleSavePhotoUrl}
-              >
-                <Text style={styles.confirmModalBtnText}>Save Photo URL</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      )}
     </KeyboardAvoidingView>
   );
 }
@@ -530,16 +700,40 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
   },
-  changePhotoBtn: {
+  avatarPressable: {
+    position: 'relative',
+  },
+  avatarBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#2563EB',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarBadgeIcon: {
+    fontSize: 11,
+  },
+  photoQuickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  photoQuickBtn: {
     backgroundColor: '#EFF6FF',
     borderWidth: 1,
     borderColor: '#BFDBFE',
     borderRadius: 12,
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 3,
-    marginTop: 6,
   },
-  changePhotoBtnText: {
+  photoQuickBtnText: {
     fontSize: 10,
     fontWeight: '700',
     color: '#1D4ED8',
@@ -784,61 +978,158 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  /* URL Modal Overlay */
-  urlModalOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+
+  /* Data Sources Breakdown Table */
+  dataSourcesTable: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 8,
+    marginBottom: 6,
   },
-  urlModalCard: {
-    width: '100%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 18,
-  },
-  urlModalTitle: {
-    fontSize: 16,
+  dataSourcesTableTitle: {
+    fontSize: 11,
     fontWeight: '700',
-    color: '#111827',
+    color: '#475569',
+    marginBottom: 6,
   },
-  urlModalSubtitle: {
+  dataSourceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 3,
+  },
+  dataSourceName: {
+    fontSize: 11,
+    color: '#334155',
+    fontWeight: '500',
+  },
+  badgeDb: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#15803D',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  badgeHardcoded: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#92400E',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+
+  /* Live Database Diagnostics Styles */
+  liveStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  liveStatusConnected: {
+    backgroundColor: '#DCFCE7',
+  },
+  liveStatusOffline: {
+    backgroundColor: '#FEF3C7',
+  },
+  liveStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  liveStatusTextConnected: {
+    color: '#15803D',
+  },
+  liveStatusTextOffline: {
+    color: '#B45309',
+  },
+  switcherLabel: {
     fontSize: 12,
+    fontWeight: '700',
+    color: '#374151',
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  userSwitcherScroll: {
+    gap: 8,
+    paddingBottom: 6,
+  },
+  userSwitchPill: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+    marginRight: 6,
+  },
+  userSwitchPillActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#2563EB',
+  },
+  userSwitchPillName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  userSwitchPillNameActive: {
+    color: '#1D4ED8',
+  },
+  userSwitchPillRole: {
+    fontSize: 10,
     color: '#6B7280',
     marginTop: 2,
-    marginBottom: 12,
   },
-  urlModalBtnRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
+  userSwitchPillRoleActive: {
+    color: '#2563EB',
+    fontWeight: '600',
+  },
+  testDiagnosticsBtn: {
+    backgroundColor: '#0F172A',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
     marginTop: 12,
   },
-  cancelModalBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 6,
-    backgroundColor: '#F3F4F6',
-  },
-  cancelModalBtnText: {
-    color: '#4B5563',
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  confirmModalBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
-    backgroundColor: '#2563EB',
-  },
-  confirmModalBtnText: {
+  testDiagnosticsBtnText: {
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 13,
+  },
+  diagnosticSummaryBox: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 10,
+  },
+  diagnosticSummaryTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 8,
+  },
+  diagnosticMetricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  diagnosticMetricItem: {
+    alignItems: 'center',
+  },
+  diagnosticMetricValue: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#2563EB',
+  },
+  diagnosticMetricLabel: {
+    fontSize: 10,
+    color: '#64748B',
+    marginTop: 2,
   },
 });

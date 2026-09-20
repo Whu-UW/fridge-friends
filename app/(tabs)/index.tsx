@@ -1,6 +1,7 @@
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
   Alert,
@@ -40,6 +41,7 @@ const CATEGORIES = [
 
 export default function MyFridgeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const {
     currentUser,
     friends,
@@ -51,6 +53,8 @@ export default function MyFridgeScreen() {
     generateTopSoloRecipes,
     generateTopDinnerPartyRecipes,
     createFeastInvite,
+    backendConnected,
+    isPantryHardcoded,
   } = useApp();
 
   // Filter only mutual (accepted) friends for Feast Mode
@@ -199,6 +203,29 @@ export default function MyFridgeScreen() {
     }
   };
 
+  const handleSendFeastInvitesWithAllRecipes = () => {
+    const invitedFriendsList = friends.filter((f) =>
+      selectedFriendIds.includes(f.id),
+    );
+    const friendNames =
+      invitedFriendsList.map((f) => f.display_name).join(", ") || "friends";
+
+    createFeastInvite(partyRecipes, partyTitle, selectedFriendIds);
+    setIsPartyRecipesModalVisible(false);
+
+    Alert.alert(
+      "Feast Invites Sent for Group Voting! 🎉",
+      `Invitations with all ${partyRecipes.length} candidate recipes were sent to ${friendNames}.\n\nEveryone can now vote on what to cook in the Feasts tab!`,
+      [
+        {
+          text: "Open Feasts Tab",
+          onPress: () => router.push("/(tabs)/feasts"),
+        },
+        { text: "OK", style: "cancel" },
+      ],
+    );
+  };
+
   const handleSelectFeastAndInvite = (recipe: RecipeComposite) => {
     const invitedFriendsList = friends.filter((f) =>
       selectedFriendIds.includes(f.id),
@@ -211,11 +238,11 @@ export default function MyFridgeScreen() {
 
     Alert.alert(
       "Feast Invites Sent! 🎉",
-      `Invitations for "${recipe.title}" were sent to ${friendNames}.\n\nYou can track which friends accept under Pending Feasts in the Social tab!`,
+      `Invitations for "${recipe.title}" were sent to ${friendNames}.\n\nYou can track RSVPs and recipe details in the Feasts tab!`,
       [
         {
-          text: "View in Social Tab",
-          onPress: () => router.push("/(tabs)/social"),
+          text: "View in Feasts Tab",
+          onPress: () => router.push("/(tabs)/feasts"),
         },
         {
           text: "View Recipe",
@@ -539,6 +566,24 @@ export default function MyFridgeScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Live Database vs Hardcoded Fallback Indicator */}
+      {backendConnected ? (
+        <View style={styles.dbStatusBanner}>
+          <Text style={styles.dbStatusBannerText}>
+            🟢 Live Database: {currentUser.display_name}&apos;s Pantry ({userItems.length} items from server)
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.hardcodedWarningBanner}>
+          <Text style={styles.hardcodedWarningTitle}>
+            ⚠️ [HARDCODED DATA] Database Unreachable
+          </Text>
+          <Text style={styles.hardcodedWarningSub}>
+            Note: Showing hardcoded fallback items because the backend database is unreachable.
+          </Text>
+        </View>
+      )}
+
       {/* Two Primary Action Buttons: Get Recipe vs Feast Mode */}
       <View style={styles.actionButtonsRow}>
         {/* Button 1: Get Recipe (Solo) */}
@@ -597,7 +642,10 @@ export default function MyFridgeScreen() {
           data={userItems}
           keyExtractor={(item) => item.id}
           renderItem={renderFridgeCard}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: Math.max(insets.bottom, 16) + 110 },
+          ]}
           ListEmptyComponent={
             <View style={styles.emptyBox}>
               <Text style={styles.emptyTitle}>Your fridge is empty!</Text>
@@ -611,7 +659,10 @@ export default function MyFridgeScreen() {
 
       {/* Floating Action Button (FAB) */}
       <Pressable
-        style={styles.fab}
+        style={[
+          styles.fab,
+          { bottom: Math.max(insets.bottom, 16) + 20 },
+        ]}
         onPress={() => setIsFabMenuVisible(true)}
         accessibilityLabel="Add item or scan receipt"
       >
@@ -624,7 +675,12 @@ export default function MyFridgeScreen() {
         animationType="slide"
         transparent={true}
       >
-        <View style={styles.modalOverlay}>
+        <View
+          style={[
+            styles.modalOverlay,
+            { paddingBottom: Math.max(insets.bottom, 14) + 14 },
+          ]}
+        >
           <View style={styles.modalCardWide}>
             <View style={styles.modalHeaderRow}>
               <View style={{ flex: 1 }}>
@@ -641,6 +697,13 @@ export default function MyFridgeScreen() {
               >
                 <Text style={styles.closeModalBtnText}>✕</Text>
               </Pressable>
+            </View>
+
+            {/* Hardcoded / Local Data Note */}
+            <View style={styles.hardcodedNoticeCard}>
+              <Text style={styles.hardcodedNoticeText}>
+                ℹ️ [LOCAL / AI-GENERATED] Recipes are dynamically generated on demand to rescue food (backend database does not yet have a recipes table).
+              </Text>
             </View>
 
             <ScrollView
@@ -713,7 +776,10 @@ export default function MyFridgeScreen() {
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={styles.modalOverlay}
+          style={[
+            styles.modalOverlay,
+            { paddingBottom: Math.max(insets.bottom, 14) + 14 },
+          ]}
         >
           <View style={styles.modalCard}>
             <View style={styles.modalHeaderRow}>
@@ -736,6 +802,13 @@ export default function MyFridgeScreen() {
               contentContainerStyle={{ paddingBottom: 10 }}
               keyboardShouldPersistTaps="handled"
             >
+              {/* Hardcoded / Local Notice */}
+              <View style={styles.hardcodedNoticeCard}>
+                <Text style={styles.hardcodedNoticeText}>
+                  ℹ️ [HARDCODED / LOCAL] Feasts and invites are managed locally on your device (backend database does not yet have a feasts table). Expiring ingredients are pooled from live database accounts.
+                </Text>
+              </View>
+
               {/* Party Title */}
               <Text style={styles.inputLabel}>Feast Name:</Text>
               <TextInput
@@ -881,7 +954,12 @@ export default function MyFridgeScreen() {
         animationType="slide"
         transparent={true}
       >
-        <View style={styles.modalOverlay}>
+        <View
+          style={[
+            styles.modalOverlay,
+            { paddingBottom: Math.max(insets.bottom, 14) + 14 },
+          ]}
+        >
           <View style={styles.modalCardWide}>
             <View style={styles.modalHeaderRow}>
               <View style={{ flex: 1 }}>
@@ -897,6 +975,31 @@ export default function MyFridgeScreen() {
                 onPress={() => setIsPartyRecipesModalVisible(false)}
               >
                 <Text style={styles.closeModalBtnText}>✕</Text>
+              </Pressable>
+            </View>
+
+            {/* Hardcoded / Local Notice */}
+            <View style={styles.hardcodedNoticeCard}>
+              <Text style={styles.hardcodedNoticeText}>
+                ℹ️ [LOCAL / AI-GENERATED] Collaborative recipes are generated dynamically to rescue food across fridges. Backend database does not yet have a feasts table.
+              </Text>
+            </View>
+
+            {/* Voting Banner & Primary Action: Send all recipes for group voting */}
+            <View style={styles.votingBannerBox}>
+              <Text style={styles.votingBannerTitle}>
+                🗳️ Group Recipe Voting (Recommended)
+              </Text>
+              <Text style={styles.votingBannerSub}>
+                You don't need to force a choice now! Send invites with all {partyRecipes.length} candidate recipes attached. Everyone can vote on what to cook in the Feasts tab!
+              </Text>
+              <Pressable
+                style={styles.sendAllCandidatesBtn}
+                onPress={handleSendFeastInvitesWithAllRecipes}
+              >
+                <Text style={styles.sendAllCandidatesBtnText}>
+                  ✉️ Send Invites with All {partyRecipes.length} Recipes (Vote Together)
+                </Text>
               </Pressable>
             </View>
 
@@ -945,13 +1048,13 @@ export default function MyFridgeScreen() {
                     </Text>
                   </View>
 
-                  {/* CTA button: Send invites and select feast */}
+                  {/* CTA button: Option to pre-select just this recipe */}
                   <Pressable
-                    style={styles.viewRecipePartyBtn}
+                    style={styles.viewRecipePartySecondaryBtn}
                     onPress={() => handleSelectFeastAndInvite(recipe)}
                   >
-                    <Text style={styles.viewRecipeBtnText}>
-                      Select Feast &amp; Send Invites ✉️
+                    <Text style={styles.viewRecipeSecondaryBtnText}>
+                      Or Pre-select Just This Recipe &amp; Send ✉️
                     </Text>
                   </Pressable>
                 </View>
@@ -968,7 +1071,10 @@ export default function MyFridgeScreen() {
         transparent={true}
       >
         <Pressable
-          style={styles.modalOverlay}
+          style={[
+            styles.modalOverlay,
+            { paddingBottom: Math.max(insets.bottom, 14) + 14 },
+          ]}
           onPress={() => setIsFabMenuVisible(false)}
         >
           <Pressable
@@ -1038,7 +1144,10 @@ export default function MyFridgeScreen() {
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={styles.modalOverlay}
+          style={[
+            styles.modalOverlay,
+            { paddingBottom: Math.max(insets.bottom, 14) + 14 },
+          ]}
         >
           <View style={styles.modalCard}>
             <Text style={styles.modalHeading}>✍️ Manually Add Item</Text>
@@ -1227,7 +1336,10 @@ export default function MyFridgeScreen() {
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={styles.modalOverlay}
+          style={[
+            styles.modalOverlay,
+            { paddingBottom: Math.max(insets.bottom, 14) + 14 },
+          ]}
         >
           <View style={styles.modalCard}>
             <View style={styles.modalHeaderRow}>
@@ -2301,5 +2413,103 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "bold",
     color: "#059669",
+  },
+  /* Database vs Hardcoded Notice Banners */
+  dbStatusBanner: {
+    backgroundColor: "#DCFCE7",
+    borderWidth: 1,
+    borderColor: "#86EFAC",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 4,
+    alignItems: "center",
+  },
+  dbStatusBannerText: {
+    color: "#15803D",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  hardcodedWarningBanner: {
+    backgroundColor: "#FEF3C7",
+    borderWidth: 1,
+    borderColor: "#FCD34D",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  hardcodedWarningTitle: {
+    color: "#B45309",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  hardcodedWarningSub: {
+    color: "#92400E",
+    fontSize: 11,
+    marginTop: 2,
+  },
+  hardcodedNoticeCard: {
+    backgroundColor: "#F1F5F9",
+    borderLeftWidth: 3,
+    borderLeftColor: "#64748B",
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  hardcodedNoticeText: {
+    fontSize: 11,
+    color: "#475569",
+    lineHeight: 16,
+  },
+  votingBannerBox: {
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  votingBannerTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#1E40AF",
+    marginBottom: 4,
+  },
+  votingBannerSub: {
+    fontSize: 11,
+    color: "#1E40AF",
+    lineHeight: 16,
+    marginBottom: 10,
+  },
+  sendAllCandidatesBtn: {
+    backgroundColor: "#2563EB",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  sendAllCandidatesBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  viewRecipePartySecondaryBtn: {
+    backgroundColor: "#F3F4F6",
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  viewRecipeSecondaryBtnText: {
+    color: "#374151",
+    fontSize: 12,
+    fontWeight: "600",
   },
 });

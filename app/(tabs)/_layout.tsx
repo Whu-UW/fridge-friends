@@ -30,15 +30,23 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'My Fridge',
-          tabBarLabel: 'My Fridge',
+          tabBarLabel: 'Fridge',
           tabBarIcon: () => <Text style={{ fontSize: 20 }}>🧊</Text>,
+        }}
+      />
+      <Tabs.Screen
+        name="feasts"
+        options={{
+          title: 'Dinner Parties',
+          tabBarLabel: 'Feasts',
+          tabBarIcon: () => <Text style={{ fontSize: 20 }}>🍽️</Text>,
         }}
       />
       <Tabs.Screen
         name="social"
         options={{
-          title: 'Friends & Circles',
-          tabBarLabel: 'Social',
+          title: 'Friends & Fridges',
+          tabBarLabel: 'Friends',
           tabBarIcon: () => <Text style={{ fontSize: 20 }}>👥</Text>,
         }}
       />

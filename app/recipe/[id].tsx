@@ -7,11 +7,13 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../context/AppContext';
 
 export default function RecipeViewScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { currentUser, getRecipe, rsvpRecipe } = useApp();
 
   const recipe = id ? getRecipe(id) : undefined;
@@ -51,7 +53,13 @@ export default function RecipeViewScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[
+        styles.content,
+        { paddingBottom: Math.max(insets.bottom, 20) + 40 },
+      ]}
+    >
       {/* Header Title & Tags */}
       <View style={styles.header}>
         <Text style={styles.title}>{recipe.title}</Text>
@@ -64,6 +72,13 @@ export default function RecipeViewScreen() {
           ) : (
             <Text style={styles.soloBadge}>👤 Solo Waste-Reduction</Text>
           )}
+        </View>
+
+        {/* Local / Hardcoded Data Notice */}
+        <View style={styles.hardcodedNotice}>
+          <Text style={styles.hardcodedNoticeText}>
+            ℹ️ [LOCAL / AI-GENERATED] This recipe and task breakdown are generated on-demand and stored in local app state (backend database recipes table pending).
+          </Text>
         </View>
       </View>
 
@@ -398,5 +413,19 @@ const styles = StyleSheet.create({
   backButtonText: {
     color: '#FFFFFF',
     fontWeight: '600',
+  },
+  hardcodedNotice: {
+    backgroundColor: '#F1F5F9',
+    borderLeftWidth: 3,
+    borderLeftColor: '#64748B',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 10,
+  },
+  hardcodedNoticeText: {
+    fontSize: 11,
+    color: '#475569',
+    lineHeight: 16,
   },
 });

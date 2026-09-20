@@ -7,12 +7,14 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../context/AppContext';
 import { FridgeItemRow } from '../../services/supabase/types';
 
 export default function FriendFridgeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { friends, followingFriendIds, toggleFollowFriend, getFriendFridgeItems } = useApp();
 
   const friend = friends.find((f) => f.id === id);
@@ -112,7 +114,10 @@ export default function FriendFridgeScreen() {
         data={items}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: Math.max(insets.bottom, 20) + 40 },
+        ]}
         ListEmptyComponent={
           <View style={styles.emptyBox}>
             <Text style={styles.emptyTitle}>Fridge is Empty</Text>
