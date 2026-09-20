@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="Milk, uneasy">
+<title>Milk, uneasy</title>
+<g class="character"><g class="body"><g stroke="#3E2A1E" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"><path d="M56 72 L82 32 L118 32 L144 72 Z" fill="#FFFFFF"/><rect x="56" y="72" width="88" height="92" rx="8" fill="#FFFFFF"/></g></g><g class="eyes"><circle cx="82" cy="110" r="8" fill="#fff" stroke="#3E2A1E" stroke-width="5.25" stroke-linecap="round" stroke-linejoin="round"/><circle cx="85" cy="110" r="3.2" fill="#3E2A1E"/><circle cx="118" cy="110" r="8" fill="#fff" stroke="#3E2A1E" stroke-width="5.25" stroke-linecap="round" stroke-linejoin="round"/><circle cx="121" cy="110" r="3.2" fill="#3E2A1E"/></g><g transform="translate(100 132)"><path d="M-9 4 h18" fill="none" stroke="#3E2A1E" stroke-width="6.12" stroke-linecap="round" stroke-linejoin="round"/></g></g>
+</svg>

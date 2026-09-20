@@ -117,7 +117,8 @@ interface AppContextType {
     price: number,
     dateBoughtIso: string,
     category?: string,
-    customShelfLifeDays?: number
+    customShelfLifeDays?: number,
+    customExpiresAtIso?: string
   ) => Promise<void>;
   removeFridgeItem: (id: string) => void;
   toggleFollowFriend: (friendId: string) => void;
@@ -856,11 +857,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         console.warn('Could not fetch feasts from backend database:', feastsErr);
       }
 
-      // If user has no feasts in the database yet, provide initial feast synthesized from live db items
-      if (liveFeasts.length === 0) {
-        liveFeasts = [buildLiveFeastFromDb(userProfile, mappedFriends, allLiveItems)];
-      }
-
       setFeasts(liveFeasts);
 
       // Register all candidate recipes into recipes list for /recipe/[id] lookup
@@ -879,19 +875,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
 
     } catch (err: any) {
-      console.warn('Backend database unreachable. Falling back to hardcoded backup values:', err.message);
+      console.warn('Backend database unreachable:', err.message);
       setBackendConnected(false);
       setBackendError(err.message || 'Could not connect to backend');
       
-      // ONLY NOW USE HARDCODED VALUES AS A BACKUP!
-      setCurrentUser(initialCurrentUser);
-      setFridgeItems(initialFridgeItems);
-      setFriends(initialFriends);
-      setFollowingFriendIds([SAM_ID, JORDAN_ID]);
-      setFeasts(initialFeasts);
-      setCircles(initialCircles);
-      setShoppingTrips(initialShoppingTrips);
-      setRecipes(initialRecipes);
+      // Strict backend-only policy: empty arrays rather than phantom hardcoded items
+      setFridgeItems([]);
+      setFriends([]);
+      setFollowingFriendIds([]);
+      setFeasts([]);
+      setRecipes([]);
     } finally {
       setIsSyncing(false);
       setBackendSyncAttempted(true);
@@ -1106,12 +1099,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     price: number,
     dateBoughtIso: string,
     category: string = 'General',
-    customShelfLifeDays?: number
+    customShelfLifeDays?: number,
+    customExpiresAtIso?: string
   ) => {
-    let shelfLifeDays = customShelfLifeDays || 0;
     let expiresAt: string;
+    let shelfLifeDays = customShelfLifeDays || 0;
 
-    if (shelfLifeDays > 0) {
+    if (customExpiresAtIso) {
+      expiresAt = customExpiresAtIso;
+      const diffMs = new Date(expiresAt).getTime() - new Date(dateBoughtIso).getTime();
+      shelfLifeDays = Math.max(1, Math.round(diffMs / dayMs));
+    } else if (shelfLifeDays > 0) {
       expiresAt = new Date(
         new Date(dateBoughtIso).getTime() + shelfLifeDays * dayMs
       ).toISOString();

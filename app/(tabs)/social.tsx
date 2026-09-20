@@ -74,11 +74,8 @@ export default function SocialScreen() {
   if (!backendSyncAttempted) {
     return (
       <View style={styles.initialLoadingContainer}>
-        <ActivityIndicator size="large" color="#2563EB" />
-        <Text style={styles.initialLoadingTitle}>Connecting to Live Database...</Text>
-        <Text style={styles.initialLoadingSub}>
-          Loading friends and shared fridges from server...
-        </Text>
+        <ActivityIndicator size="large" color="#B4523A" />
+        <Text style={styles.initialLoadingTitle}>Loading Friends...</Text>
       </View>
     );
   }
@@ -109,23 +106,6 @@ export default function SocialScreen() {
           </Pressable>
         </View>
 
-        {/* Database vs Hardcoded Notice for Friends */}
-        {backendConnected ? (
-          <View style={styles.dbStatusBanner}>
-            <Text style={styles.dbStatusBannerText}>
-              🟢 Live Database Friends ({friends.length} accounts from server)
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.hardcodedWarningBanner}>
-            <Text style={styles.hardcodedWarningTitle}>
-              ⚠️ [HARDCODED DATA] Database Unreachable
-            </Text>
-            <Text style={styles.hardcodedWarningSub}>
-              Note: Showing hardcoded friends list because the backend database could not be reached.
-            </Text>
-          </View>
-        )}
 
         {/* Add Friend Input Box */}
         {isAddingVisible && (

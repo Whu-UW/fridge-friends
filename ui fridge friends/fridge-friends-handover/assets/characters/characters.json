@@ -1,0 +1,297 @@
+{
+  "note": "Sample values for design handover. Shelf lives are placeholders, not food-safety data.",
+  "viewBox": "0 0 200 200",
+  "ink": "#3E2A1E",
+  "foods": {
+    "milk": {
+      "name": "Milk",
+      "buddyName": "Milo",
+      "body": "carton",
+      "color": "#FFFFFF",
+      "accent": "#FFFFFF",
+      "faceAnchor": [
+        100,
+        118
+      ],
+      "top": 30,
+      "category": "hardExpiry",
+      "sampleShelfLifeDays": 10,
+      "moods": [
+        "happy",
+        "uneasy",
+        "toxic",
+        "done",
+        "joy",
+        "scared"
+      ]
+    },
+    "egg": {
+      "name": "Eggs",
+      "buddyName": "Eddie",
+      "body": "egg",
+      "color": "#F6D9A8",
+      "accent": "#F6D9A8",
+      "faceAnchor": [
+        100,
+        112
+      ],
+      "top": 54,
+      "category": "hardExpiry",
+      "sampleShelfLifeDays": 21,
+      "moods": [
+        "happy",
+        "uneasy",
+        "toxic",
+        "done",
+        "joy",
+        "scared"
+      ]
+    },
+    "spinach": {
+      "name": "Spinach",
+      "buddyName": "Sammy",
+      "body": "leaf",
+      "color": "#5DBB8A",
+      "accent": "#5DBB8A",
+      "faceAnchor": [
+        100,
+        108
+      ],
+      "top": 36,
+      "category": "gradual",
+      "sampleShelfLifeDays": 7,
+      "moods": [
+        "happy",
+        "uneasy",
+        "nervous",
+        "wilting",
+        "done",
+        "joy",
+        "scared"
+      ]
+    },
+    "pepper": {
+      "name": "Bell pepper",
+      "buddyName": "Bella",
+      "body": "pepper",
+      "color": "#F0A03C",
+      "accent": "#F0A03C",
+      "faceAnchor": [
+        100,
+        110
+      ],
+      "top": 34,
+      "category": "gradual",
+      "sampleShelfLifeDays": null,
+      "moods": [
+        "happy",
+        "uneasy",
+        "nervous",
+        "wilting",
+        "done",
+        "joy",
+        "scared"
+      ]
+    },
+    "can": {
+      "name": "Canned tomatoes",
+      "buddyName": "Carl",
+      "body": "can",
+      "color": "#E8674F",
+      "accent": "#E8E2D4",
+      "faceAnchor": [
+        100,
+        116
+      ],
+      "top": 46,
+      "category": "shelfStable",
+      "sampleShelfLifeDays": 730,
+      "moods": [
+        "happy",
+        "uneasy",
+        "done",
+        "joy",
+        "scared"
+      ]
+    },
+    "pasta": {
+      "name": "Pasta",
+      "buddyName": null,
+      "body": "box",
+      "color": "#F0C674",
+      "accent": "#FBF3E4",
+      "faceAnchor": [
+        100,
+        114
+      ],
+      "top": 40,
+      "category": "shelfStable",
+      "sampleShelfLifeDays": 365,
+      "moods": [
+        "happy",
+        "uneasy",
+        "done",
+        "joy",
+        "scared"
+      ]
+    },
+    "eggplant": {
+      "name": "Eggplant",
+      "buddyName": null,
+      "body": "eggplant",
+      "color": "#9A62B8",
+      "accent": "#5DBB8A",
+      "faceAnchor": [
+        100,
+        118
+      ],
+      "top": 40,
+      "category": "gradual",
+      "sampleShelfLifeDays": 5,
+      "moods": [
+        "happy",
+        "uneasy",
+        "nervous",
+        "wilting",
+        "done",
+        "joy",
+        "scared"
+      ]
+    },
+    "salmon": {
+      "name": "Salmon",
+      "buddyName": null,
+      "body": "fish",
+      "color": "#F58B6E",
+      "accent": "#F0684A",
+      "faceAnchor": [
+        100,
+        104
+      ],
+      "top": 30,
+      "category": "hardExpiry",
+      "sampleShelfLifeDays": 12,
+      "moods": [
+        "happy",
+        "uneasy",
+        "toxic",
+        "done",
+        "joy",
+        "scared"
+      ]
+    },
+    "lemon": {
+      "name": "Lemon",
+      "buddyName": null,
+      "body": "lemon",
+      "color": "#F6D64A",
+      "accent": "#5DBB8A",
+      "faceAnchor": [
+        100,
+        108
+      ],
+      "top": 34,
+      "category": "gradual",
+      "sampleShelfLifeDays": 21,
+      "moods": [
+        "happy",
+        "uneasy",
+        "nervous",
+        "wilting",
+        "done",
+        "joy",
+        "scared"
+      ]
+    }
+  },
+  "categories": {
+    "gradual": {
+      "label": "Gradual decline",
+      "freshness": "days left / shelf life, clamped 0 to 1",
+      "desaturates": true,
+      "moods": [
+        {
+          "min": 0.75,
+          "mood": "happy",
+          "motion": "bob"
+        },
+        {
+          "min": 0.5,
+          "mood": "uneasy",
+          "motion": "blink"
+        },
+        {
+          "min": 0.25,
+          "mood": "nervous",
+          "motion": "jitter"
+        },
+        {
+          "min": 0.05,
+          "mood": "wilting",
+          "motion": "sob"
+        },
+        {
+          "min": 0,
+          "mood": "done",
+          "motion": "none"
+        }
+      ]
+    },
+    "hardExpiry": {
+      "label": "Hard expiry",
+      "freshness": "1.0 with more than 3 days left, 0.35 with 1 to 3 days left, 0 on and after the expiry date",
+      "desaturates": false,
+      "moods": [
+        {
+          "min": 0.5,
+          "mood": "happy",
+          "motion": "bob"
+        },
+        {
+          "min": 0.2,
+          "mood": "uneasy",
+          "motion": "blink"
+        },
+        {
+          "min": 0,
+          "mood": "toxic",
+          "motion": "rage"
+        }
+      ]
+    },
+    "shelfStable": {
+      "label": "Shelf-stable",
+      "freshness": "days left / shelf life, clamped 0 to 1",
+      "desaturates": true,
+      "moods": [
+        {
+          "min": 0.5,
+          "mood": "happy",
+          "motion": "roll"
+        },
+        {
+          "min": 0.15,
+          "mood": "uneasy",
+          "motion": "blink"
+        },
+        {
+          "min": 0,
+          "mood": "done",
+          "motion": "none"
+        }
+      ]
+    }
+  },
+  "saturationByMood": {
+    "happy": 1.0,
+    "uneasy": 0.75,
+    "nervous": 0.55,
+    "wilting": 0.4,
+    "done": 0.3
+  },
+  "reactions": {
+    "joy": "rescued meal",
+    "scared": "before a crush",
+    "done": "crushed ingredient"
+  }
+}

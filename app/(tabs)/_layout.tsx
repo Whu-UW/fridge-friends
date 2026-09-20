@@ -1,61 +1,77 @@
 import { Tabs } from 'expo-router';
-import { Text, Platform } from 'react-native';
+import { Text, Platform, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Colors, Fonts } from '../../constants/Theme';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
 
   // Android edge-to-edge system navigation bar safe area handling
-  const bottomPadding = insets.bottom > 0 ? insets.bottom : (Platform.OS === 'android' ? 12 : 8);
-  const tabHeight = 60 + bottomPadding;
+  const bottomPadding = insets.bottom > 0 ? insets.bottom : Platform.OS === 'android' ? 12 : 8;
+  const tabHeight = 64 + bottomPadding;
 
   return (
     <Tabs
       screenOptions={{
-        headerShown: true,
-        headerStyle: { backgroundColor: '#FFFFFF' },
-        headerTitleStyle: { fontWeight: 'bold', fontSize: 18, color: '#111827' },
-        tabBarActiveTintColor: '#2563EB',
-        tabBarInactiveTintColor: '#6B7280',
+        headerShown: false, // Handover screens provide their own custom header layouts
+        tabBarActiveTintColor: Colors.terracotta,
+        tabBarInactiveTintColor: '#8A776A',
+        tabBarLabelStyle: {
+          fontFamily: Fonts.headingSemiBold,
+          fontSize: 12,
+          marginTop: -2,
+        },
         tabBarStyle: {
-          backgroundColor: '#FFFFFF',
-          borderTopColor: '#E5E7EB',
-          borderTopWidth: 1,
+          backgroundColor: Colors.paper,
+          borderTopColor: Colors.ink,
+          borderTopWidth: 2.5,
           height: tabHeight,
           paddingBottom: bottomPadding,
-          paddingTop: 6,
+          paddingTop: 8,
         },
-      }}>
+      }}
+    >
+      {/* Tab 1: Shelf */}
       <Tabs.Screen
         name="index"
         options={{
-          title: 'My Fridge',
-          tabBarLabel: 'Fridge',
-          tabBarIcon: () => <Text style={{ fontSize: 20 }}>🧊</Text>,
+          title: 'Shelf',
+          tabBarLabel: 'Shelf',
+          tabBarIcon: ({ color, focused }) => (
+            <Text style={{ fontSize: 20, color }}>{focused ? '🏠' : '🛖'}</Text>
+          ),
         }}
       />
+
+      {/* Tab 2: Feast */}
       <Tabs.Screen
         name="feasts"
         options={{
-          title: 'Dinner Parties',
-          tabBarLabel: 'Feasts',
-          tabBarIcon: () => <Text style={{ fontSize: 20 }}>🍽️</Text>,
+          title: 'Feast',
+          tabBarLabel: 'Feast',
+          tabBarIcon: ({ color, focused }) => (
+            <Text style={{ fontSize: 20, color }}>{focused ? '🎉' : '👥'}</Text>
+          ),
         }}
       />
-      <Tabs.Screen
-        name="social"
-        options={{
-          title: 'Friends & Fridges',
-          tabBarLabel: 'Friends',
-          tabBarIcon: () => <Text style={{ fontSize: 20 }}>👥</Text>,
-        }}
-      />
+
+      {/* Tab 3: You (Profile, Friends & Waste Analytics) */}
       <Tabs.Screen
         name="insights"
         options={{
-          title: 'My Profile & Impact',
-          tabBarLabel: 'Profile',
-          tabBarIcon: () => <Text style={{ fontSize: 20 }}>👤</Text>,
+          title: 'You',
+          tabBarLabel: 'You',
+          tabBarIcon: ({ color, focused }) => (
+            <Text style={{ fontSize: 20, color }}>{focused ? '🧑‍🍳' : '👤'}</Text>
+          ),
+        }}
+      />
+
+      {/* Hidden legacy tab (accessible only if navigated to directly) */}
+      <Tabs.Screen
+        name="social"
+        options={{
+          href: null,
         }}
       />
     </Tabs>

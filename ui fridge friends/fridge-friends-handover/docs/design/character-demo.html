@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fridge Friends FYI: character demo</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&amp;family=Nunito:wght@400;600;700&amp;display=swap" rel="stylesheet">
+<style>
+:root{--cream:#FBF3E4;--paper:#FFFDF7;--ink:#3E2A1E;--muted:#6B5443;--terra:#B4523A;--fresh:#DDEBD7;--fresh-ink:#2F5A2B;--danger:#A63A2A}
+*{box-sizing:border-box}
+body{margin:0;background:var(--cream);color:var(--ink);font-family:'Nunito',sans-serif;line-height:1.5}
+main{max-width:860px;margin:0 auto;padding:28px 20px 48px}
+h1{font-family:'Fredoka',sans-serif;font-weight:600;font-size:30px;line-height:1.1;margin:0 0 6px}
+p{margin:0}
+.muted{color:var(--muted)}
+button{font-family:inherit;font-size:15px;font-weight:700;color:var(--ink);background:var(--paper);border:2.5px solid var(--ink);border-radius:14px;min-height:44px;padding:0 16px;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid var(--terra);outline-offset:2px}
+button.pick.on{background:var(--fresh);box-shadow:0 3px 0 var(--ink)}
+button.act{font-family:'Fredoka',sans-serif;font-weight:600;font-size:16px;box-shadow:0 3px 0 var(--ink)}
+button.act.primary{background:var(--terra);color:#fff}
+.picks{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 16px}
+.layout{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
+.left{flex:0 0 250px;max-width:100%}
+.right{flex:1;min-width:280px}
+#stage{background:var(--cream);border:2.5px solid var(--ink);border-radius:20px;box-shadow:0 4px 0 var(--ink);padding:12px 8px 4px;overflow:hidden;background:#FFF6EE}
+#msg{min-height:24px;margin-top:12px;font-size:14px;font-weight:700;text-align:center;color:var(--muted)}
+.actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:8px}
+.slider{display:flex;align-items:center;gap:12px;margin:0 0 14px}
+.slider label{font-weight:700}
+.slider input{flex:1;accent-color:var(--terra);min-height:32px}
+#val{min-width:44px;text-align:right;font-weight:700}
+.cap{font-size:13px;font-weight:700;color:var(--muted);margin:0 0 6px}
+.row{display:grid;grid-template-columns:84px 1fr 60px;gap:8px;padding:7px 10px;border-radius:10px;font-size:14px;color:var(--muted)}
+.row.on{background:var(--fresh);color:var(--fresh-ink);font-weight:700}
+#table{margin-bottom:14px}
+pre{margin:0;background:var(--paper);border:2px solid var(--ink);border-radius:14px;padding:12px 14px;font:13px/1.6 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;color:var(--ink)}
+.note{display:none;margin-top:12px;font-size:13px;color:var(--muted)}
+
+/* Character motion: identical to assets/characters/motion.css */
+.character{transform-box:fill-box;transform-origin:50% 100%}
+.eyes{transform-box:fill-box;transform-origin:center}
+.character.m-bob{animation:bob 2.4s ease-in-out infinite}
+.character.m-blink{animation:breathe 3.4s ease-in-out infinite}
+.character.m-blink .eyes{animation:blink 3.4s infinite}
+.character.m-jitter{animation:jitter .35s linear infinite}
+.character.m-sob{transform:rotate(-5deg) scaleY(.93);animation:sob 2.6s ease-in-out infinite}
+.character.m-rage{animation:rage .22s linear infinite}
+.character.m-roll{transform-origin:50% 58%;animation:roll 6s ease-in-out infinite}
+.character.m-jump{animation:jump .9s ease-out}
+.character.m-squash{animation:squash 1.9s ease-out forwards}
+.tear{animation:tear 1.1s ease-in infinite}
+.drop{animation:drip 1.4s ease-in infinite}
+.fume{animation:fume 1.8s ease-out infinite}
+.tox{animation:toxp 1.2s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.02)}}
+@keyframes blink{0%,90%,100%{transform:scaleY(1)}94%{transform:scaleY(.1)}}
+@keyframes jitter{0%{transform:translate(0,0) rotate(0)}25%{transform:translate(-2px,0) rotate(-1.5deg)}50%{transform:translate(2px,-1px) rotate(1.5deg)}75%{transform:translate(-1px,1px) rotate(-1deg)}100%{transform:translate(0,0) rotate(0)}}
+@keyframes sob{0%,12%,24%,100%{transform:rotate(-5deg) scaleY(.93)}6%,18%{transform:translateY(3px) rotate(-5deg) scaleY(.9)}}
+@keyframes rage{0%{transform:translate(0,0) scale(1.03)}25%{transform:translate(-3px,1px) scale(1.03)}50%{transform:translate(3px,-1px) scale(1.04)}75%{transform:translate(-2px,-1px) scale(1.03)}100%{transform:translate(0,0) scale(1.03)}}
+@keyframes roll{0%,50%,100%{transform:translateX(0) rotate(0deg)}25%{transform:translateX(28px) rotate(30deg)}75%{transform:translateX(-28px) rotate(-30deg)}}
+@keyframes jump{0%{transform:translateY(0) scale(1,1)}20%{transform:translateY(0) scale(1.08,.9)}45%{transform:translateY(-28px) scale(.95,1.08)}70%{transform:translateY(0) scale(1.06,.92)}100%{transform:translateY(0) scale(1,1)}}
+@keyframes squash{0%,23%{transform:scale(1,1)}25%{transform:scale(1.45,.12)}29%{transform:scale(1.38,.17)}100%{transform:scale(1.4,.16)}}
+@keyframes drip{0%{transform:translateY(0);opacity:1}100%{transform:translateY(16px);opacity:0}}
+@keyframes tear{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(30px);opacity:0}}
+@keyframes fume{0%{transform:translateY(6px);opacity:0}30%{opacity:.9}100%{transform:translateY(-10px);opacity:0}}
+@keyframes toxp{0%,100%{opacity:.35}50%{opacity:.6}}
+@media (prefers-reduced-motion: reduce){
+  .character,.character .eyes,.tear,.drop,.fume,.tox{animation:none!important}
+  .note{display:block}
+}
+</style>
+</head>
+<body>
+<main>
+<h1>Character demo</h1>
+<p class="muted">Pick a food, drag the freshness slider, and watch its mood and motion change. Each category follows its own mood table. All values are sample data.</p>
+<p class="note">Your device asks for reduced motion, so the looping animations are turned off here.</p>
+
+<div class="picks" role="group" aria-label="Choose a food">
+<button class="pick" data-food="milk">Milk</button>
+<button class="pick" data-food="egg">Eggs</button>
+<button class="pick" data-food="spinach">Spinach</button>
+<button class="pick" data-food="pepper">Bell pepper</button>
+<button class="pick" data-food="can">Canned tomatoes</button>
+<button class="pick" data-food="pasta">Pasta</button>
+<button class="pick" data-food="eggplant">Eggplant</button>
+<button class="pick" data-food="salmon">Salmon</button>
+<button class="pick" data-food="lemon">Lemon</button>
+</div>
+
+<div class="layout">
+<div class="left">
+<div id="stage">
+<svg id="svg" viewBox="0 0 200 200" width="100%" style="display:block;max-width:224px;margin:0 auto" role="img" aria-label="Food character that changes face and motion with freshness">
+<ellipse cx="100" cy="172" rx="50" ry="6" fill="#3E2A1E" opacity=".15"/>
+<g id="char" class="character"><g id="body"></g><g id="face"></g></g>
+<g id="fx"></g>
+</svg>
+</div>
+<p id="msg" role="status">Drag the slider to change freshness.</p>
+<div class="actions">
+<button class="act primary" id="rescue">Meal rescued</button>
+<button class="act" id="fail">Meal failed</button>
+</div>
+</div>
+
+<div class="right">
+<div class="slider">
+<label for="fresh">Freshness</label>
+<input id="fresh" type="range" min="0" max="100" step="1" value="70">
+<span id="val">70%</span>
+</div>
+<p id="tcap" class="cap"></p>
+<div id="table"></div>
+<p class="cap">What the code sees</p>
+<pre id="code"></pre>
+</div>
+</div>
+</main>
+
+<script>
+(function(){
+const NS='http://www.w3.org/2000/svg';
+const INK='#3E2A1E';
+const BODY_SW=`stroke="${INK}" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"`;
+const st=w=>`stroke="${INK}" stroke-width="${(w*1.75).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"`;
+
+const FOODS={
+milk:{body:'carton',color:'#FFFFFF',accent:'#FFFFFF',anchor:[100,118],top:30,cat:'hardExpiry',price:4,
+parts:(f,a)=>`<path d="M56 72 L82 32 L118 32 L144 72 Z" fill="${a}"/><rect x="56" y="72" width="88" height="92" rx="8" fill="${f}"/>`},
+egg:{body:'egg',color:'#F6D9A8',accent:'#F6D9A8',anchor:[100,112],top:54,cat:'hardExpiry',price:5,
+parts:(f,a)=>`<ellipse cx="100" cy="110" rx="46" ry="56" fill="${f}"/>`},
+spinach:{body:'leaf',color:'#5DBB8A',accent:'#5DBB8A',anchor:[100,108],top:36,cat:'gradual',price:3,
+parts:(f,a)=>`<path d="M100 164 Q101 170 96 174" fill="none"/><path d="M100 36C128 48 158 80 152 122C149 146 130 164 100 164C70 164 51 146 48 122C42 80 72 48 100 36Z" fill="${f}"/>`},
+pepper:{body:'pepper',color:'#F0A03C',accent:'#F0A03C',anchor:[100,110],top:34,cat:'gradual',price:2,
+parts:(f,a)=>`<path d="M100 56q0-16 10-22" fill="none"/><path d="M60 70C60 50 80 46 100 56C120 46 140 50 140 70C150 110 140 160 100 164C60 160 50 110 60 70Z" fill="${f}"/>`},
+can:{body:'can',color:'#E8674F',accent:'#E8E2D4',anchor:[100,116],top:46,cat:'shelfStable',price:2,
+parts:(f,a)=>`<rect x="58" y="46" width="84" height="118" rx="16" fill="${f}"/><rect x="58" y="46" width="84" height="20" rx="10" fill="${a}"/>`},
+pasta:{body:'box',color:'#F0C674',accent:'#FBF3E4',anchor:[100,114],top:40,cat:'shelfStable',price:2,
+parts:(f,a)=>`<rect x="60" y="40" width="80" height="124" rx="8" fill="${f}"/><rect x="60" y="51" width="80" height="20" fill="${a}"/>`},
+eggplant:{body:'eggplant',color:'#9A62B8',accent:'#5DBB8A',anchor:[100,118],top:40,cat:'gradual',price:3,
+parts:(f,a)=>`<path d="M100 48 Q100 34 110 26" fill="none"/><path d="M100 52 C120 52 128 72 138 98 C150 128 142 162 100 164 C58 162 50 128 62 98 C72 72 80 52 100 52 Z" fill="${f}"/><path d="M70 108 Q66 128 72 146" fill="none" stroke="#C9A2DC" stroke-width="5"/><path d="M76 58 Q100 40 124 58 Q114 72 100 66 Q86 72 76 58 Z" fill="${a}"/>`},
+salmon:{body:'fish',color:'#F58B6E',accent:'#F0684A',anchor:[100,104],top:30,cat:'hardExpiry',price:9,
+parts:(f,a)=>`<path d="M84 150 L68 180 Q100 168 132 180 L116 150 Z" fill="${a}"/><path d="M58 106 L38 124 L60 132 Z" fill="${a}"/><path d="M142 106 L162 124 L140 132 Z" fill="${a}"/><path d="M100 26 C138 42 152 92 146 124 C142 150 122 160 100 160 C78 160 58 150 54 124 C48 92 62 42 100 26 Z" fill="${f}"/><path d="M74 84 Q84 102 74 120" fill="none" stroke="${a}" stroke-width="5"/><path d="M84 142 Q100 152 116 142" fill="none" stroke="#FFE9DC" stroke-width="6"/>`},
+lemon:{body:'lemon',color:'#F6D64A',accent:'#5DBB8A',anchor:[100,108],top:34,cat:'gradual',price:1,
+parts:(f,a)=>`<path d="M100 36 Q108 36 112 46 C142 54 156 84 154 112 C152 140 132 160 108 164 Q104 170 100 170 Q96 170 92 164 C68 160 48 140 46 112 C44 84 58 54 88 46 Q92 36 100 36 Z" fill="${f}"/><path d="M62 84 Q58 104 64 124" fill="none" stroke="#FFF3B0" stroke-width="5"/><path d="M106 38 Q126 22 142 32 Q126 50 106 42 Z" fill="${a}"/>`}
+};
+
+const CATS={
+gradual:{label:'Gradual decline',bands:[
+{min:.75,key:'happy',label:'Happy',motion:'bob'},
+{min:.5,key:'uneasy',label:'Uneasy',motion:'blink'},
+{min:.25,key:'nervous',label:'Nervous',motion:'jitter'},
+{min:.05,key:'wilting',label:'Sad and crying',motion:'sob'},
+{min:0,key:'done',label:'Done',motion:'still'}]},
+hardExpiry:{label:'Hard expiry',bands:[
+{min:.5,key:'happy',label:'Happy',motion:'bob'},
+{min:.2,key:'uneasy',label:'Uneasy',motion:'blink'},
+{min:0,key:'toxic',label:'Mad and toxic',motion:'rage'}]},
+shelfStable:{label:'Shelf-stable',bands:[
+{min:.5,key:'happy',label:'Happy, rolling',motion:'roll'},
+{min:.15,key:'uneasy',label:'Uneasy',motion:'blink'},
+{min:0,key:'done',label:'Done',motion:'still'}]}
+};
+
+const $=id=>document.getElementById(id);
+let foodKey='can',f=.7,busy=false;
+const bandsOf=()=>CATS[FOODS[foodKey].cat].bands;
+const lookup=()=>bandsOf().find(b=>f>=b.min);
+
+const eyeOpen=(x,y,r,p,px)=>`<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" ${st(3)}/><circle cx="${x+px}" cy="${y}" r="${p}" fill="${INK}"/>`;
+const eyeJoy=(x,y)=>`<path d="M${x-8} ${y+3} q8 -9 16 0" fill="none" ${st(3.5)}/>`;
+const eyeSad=(x,y)=>`<circle cx="${x}" cy="${y}" r="8.5" fill="#fff" ${st(3)}/><circle cx="${x}" cy="${y+2}" r="5" fill="${INK}"/><circle cx="${x-1.5}" cy="${y}" r="1.7" fill="#fff"/><path d="M${x-8} ${y+5} q8 5 16 0" fill="none" stroke="#7EC8F2" stroke-width="4.4" stroke-linecap="round"/>`;
+const eyeX=(x,y)=>`<path d="M${x-6} ${y-6} l12 12 M${x+6} ${y-6} l-12 12" fill="none" ${st(3.5)}/>`;
+const M={
+smile:`<path d="M-10 0 q10 10 20 0" fill="none" ${st(3.5)}/>`,
+flat:`<path d="M-9 4 h18" fill="none" ${st(3.5)}/>`,
+wobble:`<path d="M-14 4 q3.5 -6 7 0 t7 0 t7 0 t7 0" fill="none" ${st(3)}/>`,
+wail:`<path d="M-10 10 q10 -14 20 0 Z" fill="${INK}" ${st(3)}/>`,
+teeth:`<rect x="-13" y="0" width="26" height="12" rx="3" fill="#fff" ${st(3)}/><path d="M-4.5 0 v12 M4.5 0 v12 M-13 6 h26" fill="none" stroke="${INK}" stroke-width="3"/>`,
+open:`<ellipse cx="0" cy="4" rx="5" ry="4" fill="${INK}"/>`,
+joy:`<path d="M-12 -2 q12 18 24 0 Z" fill="${INK}" ${st(3)}/>`
+};
+
+function face(key,food){
+const [ax,ay]=food.anchor,e1=ax-18,e2=ax+18,ey=ay-8;
+let eyes='',mouth='',extra='';
+const cheeks=`<circle cx="${ax-(food.cheek||32)}" cy="${ay+8}" r="6" fill="#FF8FA3"/><circle cx="${ax+(food.cheek||32)}" cy="${ay+8}" r="6" fill="#FF8FA3"/>`;
+const scaredBrows=`<path d="M${e1-9} ${ey-14} l16 -5 M${e2+9} ${ey-14} l-16 -5" fill="none" ${st(3.5)}/>`;
+if(key==='happy'){eyes=eyeOpen(e1,ey,8,3.2,0)+eyeOpen(e2,ey,8,3.2,0);mouth=M.smile;extra=cheeks;}
+else if(key==='joy'){eyes=eyeJoy(e1,ey)+eyeJoy(e2,ey);mouth=M.joy;extra=cheeks;}
+else if(key==='uneasy'){eyes=eyeOpen(e1,ey,8,3.2,3)+eyeOpen(e2,ey,8,3.2,3);mouth=M.flat;}
+else if(key==='scared'){eyes=eyeOpen(e1,ey,9.5,2.6,0)+eyeOpen(e2,ey,9.5,2.6,0);mouth=M.wobble;extra=scaredBrows;}
+else if(key==='nervous'){eyes=eyeOpen(e1,ey,9.5,2.6,0)+eyeOpen(e2,ey,9.5,2.6,0);mouth=M.wobble;
+extra=scaredBrows+`<g class="drop"><path d="M${ax+42} ${ay-34} q7 11 0 16 q-7 -5 0 -16 Z" fill="#7EC8F2" stroke="${INK}" stroke-width="4" stroke-linejoin="round"/></g>`;}
+else if(key==='wilting'){eyes=eyeSad(e1,ey)+eyeSad(e2,ey);mouth=M.wail;
+const tear=(x,d)=>`<path d="M${x} ${ey+8} v24" fill="none" stroke="#7EC8F2" stroke-width="6" stroke-linecap="round" opacity=".7"/><g class="tear" style="animation-delay:${d}s"><path d="M${x} ${ey+22} q4 6 0 9 q-4 -3 0 -9 Z" fill="#7EC8F2" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/></g>`;
+extra=`<path d="M${e1-9} ${ey-12} l16 -9 M${e2+9} ${ey-12} l-16 -9" fill="none" ${st(3.5)}/>`+tear(e1-3,0)+tear(e2+3,.5);}
+else if(key==='toxic'){eyes=eyeOpen(e1,ey,8,3.5,0)+eyeOpen(e2,ey,8,3.5,0);mouth=M.teeth;
+const fume=(x,d)=>`<path class="fume" style="animation-delay:${d}s" d="M${x} ${food.top-2} q6 -5 0 -10 t0 -10" fill="none" stroke="#7BD65B" stroke-width="5" stroke-linecap="round"/>`;
+extra=`<path d="M${e1-10} ${ey-15} l18 8 M${e2+10} ${ey-15} l-18 8" fill="none" ${st(4)}/>`+fume(ax-28,0)+fume(ax,.6)+fume(ax+28,1.2);}
+else{eyes=eyeX(e1,ey)+eyeX(e2,ey);mouth=M.open;}
+return `<g class="eyes">${eyes}</g><g transform="translate(${ax} ${ay+14})">${mouth}</g>${extra}`;
+}
+
+function drawBody(key){
+const food=FOODS[foodKey];
+let h=`<g ${BODY_SW}>${food.parts(food.color,food.accent)}</g>`;
+if(key==='toxic')h+=`<g class="tox"><g ${BODY_SW}>${food.parts('#7BD65B','#7BD65B')}</g></g>`;
+$('body').innerHTML=h;
+const sat=food.cat==='hardExpiry'?1:(0.3+0.7*f);
+$('body').style.filter=`saturate(${sat.toFixed(2)})`;
+}
+function setMotion(m){$('char').setAttribute('class','character'+(m==='still'?'':' m-'+m));}
+function buildTable(){
+const b=bandsOf();
+$('table').innerHTML=b.map((x,i)=>{
+const hi=i===0?100:Math.round(b[i-1].min*100),lo=Math.round(x.min*100);
+return `<div class="row" data-k="${x.key}"><span>${lo}–${hi}%</span><span>${x.label}</span><span>${x.motion}</span></div>`;
+}).join('');
+}
+function render(){
+const food=FOODS[foodKey],band=lookup();
+drawBody(band.key);
+$('face').innerHTML=face(band.key,food);
+setMotion(band.motion);
+buildTable();
+$('val').textContent=Math.round(f*100)+'%';
+$('fresh').value=Math.round(f*100);
+$('tcap').textContent='Mood table for '+CATS[food.cat].label.toLowerCase()+' foods';
+document.querySelectorAll('.row').forEach(r=>r.classList.toggle('on',r.dataset.k===band.key));
+document.querySelectorAll('.pick').forEach(p=>p.classList.toggle('on',p.dataset.food===foodKey));
+$('code').textContent=`const ${foodKey} = {\n  body: "${food.body}",\n  color: "${food.color}",\n  faceAnchor: [${food.anchor[0]}, ${food.anchor[1]}],\n  category: "${food.cat}",\n};\n\nlookup(${f.toFixed(2)}, "${food.cat}")\n// { mood: "${band.key}", motion: "${band.motion}" }`;
+}
+function say(t,c){const m=$('msg');m.textContent=t;m.style.color=c||'var(--muted)';}
+const mk=(tag,attrs)=>{const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);return e;};
+
+function confetti(){
+const fx=$('fx'),cols=['#B4523A','#F0C674','#5DBB8A','#7EC8F2','#FF8FA3'];
+for(let i=0;i<18;i++){
+const a=Math.random()*Math.PI*2,d=50+Math.random()*50,r=Math.random()*360;
+const s=mk(i%2?'rect':'circle',i%2?{x:97,y:96,width:7,height:7}:{cx:100,cy:100,r:4});
+s.setAttribute('fill',cols[i%cols.length]);
+s.style.transformBox='fill-box';s.style.transformOrigin='center';
+fx.appendChild(s);
+const dx=Math.cos(a)*d,dy=Math.sin(a)*d-30;
+s.animate([{transform:'translate(0px,0px) rotate(0deg)',opacity:1},{transform:`translate(${dx}px,${dy}px) rotate(${r}deg)`,opacity:1,offset:.55},{transform:`translate(${dx*1.15}px,${dy+70}px) rotate(${r*1.6}deg)`,opacity:0}],{duration:1200,easing:'ease-out',fill:'both'});
+setTimeout(()=>s.remove(),1300);
+}
+}
+function squashFx(food){
+const fx=$('fx'),top=food.top,flat=164-(164-top)*.16;
+const press=mk('g',{});
+press.innerHTML=`<rect x="90" y="-150" width="20" height="130" fill="#B4B2BC" stroke="${INK}" stroke-width="3.5" stroke-linejoin="round"/><rect x="48" y="-24" width="104" height="24" rx="4" fill="#8B8896" stroke="${INK}" stroke-width="3.5" stroke-linejoin="round"/><rect x="54" y="-19" width="92" height="7" rx="2" fill="#F0C674"/>`;
+fx.appendChild(press);
+press.animate([
+{transform:'translateY(-170px)',offset:0,easing:'cubic-bezier(.6,0,1,1)'},
+{transform:`translateY(${top-2}px)`,offset:.237},
+{transform:`translateY(${flat}px)`,offset:.274},
+{transform:`translateY(${flat}px)`,offset:.5,easing:'ease-out'},
+{transform:'translateY(-170px)',offset:.8},
+{transform:'translateY(-170px)',offset:1}
+],{duration:1900,fill:'both'});
+[-1,1].forEach(s=>{
+const c=mk('circle',{cx:100+s*66,cy:158,r:9,fill:'#E8E2D4',stroke:INK,'stroke-width':3});
+c.style.transformBox='fill-box';c.style.transformOrigin='center';
+fx.appendChild(c);
+c.animate([{transform:'translate(0px,0px) scale(.3)',opacity:0},{opacity:1,offset:.2},{transform:`translate(${s*30}px,-6px) scale(1.4)`,opacity:0}],{duration:700,delay:450,fill:'both',easing:'ease-out'});
+setTimeout(()=>c.remove(),1300);
+});
+$('stage').animate([{transform:'translateX(0px)'},{transform:'translateX(-4px)',offset:.2},{transform:'translateX(4px)',offset:.4},{transform:'translateX(-2px)',offset:.6},{transform:'translateX(0px)'}],{duration:300,delay:450});
+setTimeout(()=>press.remove(),2100);
+}
+function restore(){busy=false;render();}
+$('fail').addEventListener('click',()=>{
+if(busy)return;busy=true;
+const food=FOODS[foodKey];
+$('face').innerHTML=face('scared',food);
+$('char').setAttribute('class','character m-squash');
+squashFx(food);
+setTimeout(()=>{$('face').innerHTML=face('done',food);},450);
+say('Meal failed. $'+food.price+' counted as wasted.','var(--danger)');
+setTimeout(restore,2300);
+});
+$('rescue').addEventListener('click',()=>{
+if(busy)return;
+const key=lookup().key;
+if(key==='toxic'){say('Past the safe date. It can only be removed.','var(--danger)');return;}
+if(key==='done'){say('Too far gone to rescue.','var(--danger)');return;}
+busy=true;
+$('face').innerHTML=face('joy',FOODS[foodKey]);
+$('char').setAttribute('class','character m-jump');confetti();
+say('Rescued! $'+FOODS[foodKey].price+' saved.','var(--fresh-ink)');
+setTimeout(restore,1700);
+});
+$('fresh').addEventListener('input',e=>{
+if(busy)return;
+f=e.target.value/100;render();say('Drag the slider to change freshness.');
+});
+document.querySelectorAll('.pick').forEach(p=>p.addEventListener('click',()=>{
+if(busy)return;foodKey=p.dataset.food;render();
+}));
+render();
+})();
+</script>
+</body>
+</html>

@@ -1,5 +1,4 @@
-import * as ImagePicker from 'expo-image-picker';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,102 +6,137 @@ import {
   TextInput,
   Pressable,
   StyleSheet,
+  ActivityIndicator,
   Alert,
   Image,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
 } from 'react-native';
+import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../context/AppContext';
-import {
-  BACKEND_BASE_URL,
-  ConnectionDiagnosticResult,
-} from '../../services/backendApi';
+import { Colors, Fonts } from '../../constants/Theme';
+import StickerCard from '../../components/ui/StickerCard';
+import StickerButton from '../../components/ui/StickerButton';
+import FoodCharacter from '../../components/FoodCharacter';
+import ChangeBuddyModal from '../../components/ChangeBuddyModal';
+import { CharacterKey, STARTER_BUDDIES } from '../../services/foodCharacterLookup';
 
-export default function ProfileScreen() {
+export default function ProfileYouScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const {
     currentUser,
-    recipes,
-    feasts,
+    friends,
+    addFriend,
     updateProfile,
-    backendConnected,
+    getFriendFridgeItems,
     backendSyncAttempted,
-    backendLatency,
-    activeBackendUserId,
-    switchBackendUser,
-    testBackendDiagnostics,
-    isPantryHardcoded,
-    isFriendsHardcoded,
-    isFeastsHardcoded,
-    isRecipesHardcoded,
-    // Supabase Auth
-    supabaseUser,
-    isAuthConfigured,
-    openAuthModal,
-    logoutFromSupabase,
   } = useApp();
 
-  // Diagnostics State
-  const [diagnosticResult, setDiagnosticResult] = useState<ConnectionDiagnosticResult | null>(null);
-  const [isRunningTest, setIsRunningTest] = useState(false);
+  // Buddy State
+  const [buddyKey, setBuddyKey] = useState<CharacterKey>('can');
+  const [buddyName, setBuddyName] = useState('Carl the canned tomatoes');
+  const [isChangeBuddyVisible, setIsChangeBuddyVisible] = useState(false);
 
-  // Profile Edit State
-  const [displayName, setDisplayName] = useState(currentUser.display_name);
-  const [username, setUsername] = useState(currentUser.username);
-  const [email, setEmail] = useState(currentUser.email);
-  const [avatarUrl, setAvatarUrl] = useState(currentUser.avatar_url);
+  // Invite Friend Input
+  const [inviteUserId, setInviteUserId] = useState('');
+  const [isInviting, setIsInviting] = useState(false);
 
-  // Sync state when currentUser changes
+  // Time Period Toggle for Chart (Weeks vs Months)
+  const [period, setPeriod] = useState<'weeks' | 'months'>('weeks');
+
+  // Food Preferences Multi-Select State
+  const [selectedDiets, setSelectedDiets] = useState<string[]>(['Pescatarian']);
+  const [selectedAvoids, setSelectedAvoids] = useState<string[]>(['Peanuts']);
+  const [selectedCuisines, setSelectedCuisines] = useState<string[]>([
+    'Italian',
+    'Mexican',
+    'Mediterranean',
+  ]);
+  const [isSavingPrefs, setIsSavingPrefs] = useState(false);
+  const [prefsSavedSuccess, setPrefsSavedSuccess] = useState(false);
+
+  // Load saved preferences on mount
   useEffect(() => {
-    setDisplayName(currentUser.display_name);
-    setUsername(currentUser.username);
-    setEmail(currentUser.email);
-    setAvatarUrl(currentUser.avatar_url);
-  }, [currentUser]);
+    const loadSavedPrefs = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(`user_preferences_${currentUser.id}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed.diets) setSelectedDiets(parsed.diets);
+          if (parsed.avoids) setSelectedAvoids(parsed.avoids);
+          if (parsed.cuisines) setSelectedCuisines(parsed.cuisines);
+        }
+      } catch {}
+    };
+    loadSavedPrefs();
+  }, [currentUser.id]);
 
-  // Password Edit State
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const handleSavePreferences = async () => {
+    setIsSavingPrefs(true);
+    try {
+      await AsyncStorage.setItem(
+        `user_preferences_${currentUser.id}`,
+        JSON.stringify({
+          diets: selectedDiets,
+          avoids: selectedAvoids,
+          cuisines: selectedCuisines,
+        })
+      );
+      setPrefsSavedSuccess(true);
+      setTimeout(() => setPrefsSavedSuccess(false), 3000);
+    } catch {
+      Alert.alert('Save Failed', 'Could not save preferences.');
+    } finally {
+      setIsSavingPrefs(false);
+    }
+  };
 
-  // 1. Calculate Food Rescued Metrics: Solo vs With Friends
-  // Solo recipes impact
-  const soloRecipes = recipes.filter((r) => !r.isCollaborative);
-  const soloRescuedGrams =
-    soloRecipes.reduce((sum, r) => sum + r.projectedImpact.foodRescuedGrams, 0) +
-    1280; // base historical metric
-  const soloDollarsSaved =
-    soloRecipes.reduce((sum, r) => sum + r.projectedImpact.dollarsSaved, 0) +
-    18.4;
+  const toggleDiet = (diet: string) => {
+    setSelectedDiets((prev) =>
+      prev.includes(diet) ? prev.filter((d) => d !== diet) : [...prev, diet]
+    );
+  };
 
-  // Collaborative / Feast Mode impact
-  const collabRecipes = recipes.filter((r) => r.isCollaborative);
-  const feastRescuedGrams =
-    collabRecipes.reduce((sum, r) => sum + r.projectedImpact.foodRescuedGrams, 0) +
-    feasts.reduce((sum, f) => sum + f.foodRescuedGrams, 0) +
-    2850; // base historical metric
-  const feastDollarsSaved =
-    collabRecipes.reduce((sum, r) => sum + r.projectedImpact.dollarsSaved, 0) +
-    feasts.reduce((sum, f) => sum + f.dollarsSaved, 0) +
-    41.2;
+  const toggleAvoid = (avoid: string) => {
+    setSelectedAvoids((prev) =>
+      prev.includes(avoid) ? prev.filter((a) => a !== avoid) : [...prev, avoid]
+    );
+  };
 
-  // Overall combined impact
-  const totalRescuedGrams = soloRescuedGrams + feastRescuedGrams;
-  const totalRescuedKg = (totalRescuedGrams / 1000).toFixed(1);
-  const totalDollars = (soloDollarsSaved + feastDollarsSaved).toFixed(2);
-  const co2AvoidedKg = ((totalRescuedGrams / 1000) * 2.5).toFixed(1);
-  const totalMealsSaved = Math.round(totalRescuedGrams / 350);
+  const toggleCuisine = (cuisine: string) => {
+    setSelectedCuisines((prev) =>
+      prev.includes(cuisine) ? prev.filter((c) => c !== cuisine) : [...prev, cuisine]
+    );
+  };
 
-  // Profile Picture Handlers: Camera & Gallery ONLY (no manual URL entry)
-  const handlePickPhotoFromGallery = async () => {
+  const handleInviteFriend = () => {
+    const trimmed = inviteUserId.trim().replace('@', '');
+    if (!trimmed) {
+      Alert.alert('User ID Required', 'Please enter a friend’s user ID to invite.');
+      return;
+    }
+
+    setIsInviting(true);
+    try {
+      addFriend(trimmed);
+      setInviteUserId('');
+      Alert.alert(
+        'Invite Sent! 🎉',
+        `Sent friend invite to @${trimmed}. Once accepted, you can cook feasts together!`
+      );
+    } catch {
+      Alert.alert('Error', 'Could not send friend request.');
+    } finally {
+      setIsInviting(false);
+    }
+  };
+
+  const handleUploadProfilePhoto = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert(
-        'Permission Required',
-        'Gallery permission is needed to choose a profile picture.'
-      );
+      Alert.alert('Gallery Permission', 'Gallery permission is needed to choose a profile photo.');
       return;
     }
 
@@ -114,1274 +148,790 @@ export default function ProfileScreen() {
     });
 
     if (!result.canceled && result.assets[0]?.uri) {
-      const newUri = result.assets[0].uri;
-      setAvatarUrl(newUri);
-      updateProfile({ avatar_url: newUri });
-      Alert.alert('Photo Updated', 'Your profile picture has been updated from gallery!');
+      const uri = result.assets[0].uri;
+      updateProfile({ avatar_url: uri });
+      Alert.alert('Photo Updated! 📸', 'Your profile photo has been updated.');
     }
   };
 
-  const handleTakePhotoWithCamera = async () => {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(
-        'Permission Required',
-        'Camera permission is needed to take a profile photo.'
-      );
-      return;
-    }
-
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets[0]?.uri) {
-      const newUri = result.assets[0].uri;
-      setAvatarUrl(newUri);
-      updateProfile({ avatar_url: newUri });
-      Alert.alert('Photo Updated', 'Your profile picture has been updated from camera!');
-    }
-  };
-
-  const handleOpenPhotoOptions = () => {
-    Alert.alert('Profile Photo', 'Choose an option to update your photo:', [
-      { text: '📷 Take Photo', onPress: handleTakePhotoWithCamera },
-      { text: '🖼️ Choose from Gallery', onPress: handlePickPhotoFromGallery },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  };
-
-  // Profile Details Save Handler
-  const handleSaveProfileDetails = () => {
-    const cleanName = displayName.trim();
-    const cleanUser = username.trim().toLowerCase().replace('@', '');
-    const cleanEmail = email.trim();
-
-    if (!cleanName) {
-      Alert.alert('Validation Error', 'Display name cannot be empty.');
-      return;
-    }
-    if (!cleanUser) {
-      Alert.alert('Validation Error', 'Username cannot be empty.');
-      return;
-    }
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      Alert.alert('Validation Error', 'Please enter a valid email address.');
-      return;
-    }
-
-    updateProfile({
-      display_name: cleanName,
-      username: cleanUser,
-      email: cleanEmail,
-    });
-
-    Alert.alert(
-      'Profile Updated 🎉',
-      'Your account information has been saved successfully!'
-    );
-  };
-
-  // Password Update Handler
-  const handleUpdatePassword = () => {
-    if (!currentPassword) {
-      Alert.alert('Validation Error', 'Please enter your current password.');
-      return;
-    }
-    if (!newPassword) {
-      Alert.alert('Validation Error', 'Please enter a new password.');
-      return;
-    }
-    if (newPassword.length < 6) {
-      Alert.alert(
-        'Weak Password',
-        'New password must be at least 6 characters long.'
-      );
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      Alert.alert('Password Mismatch', 'New passwords do not match.');
-      return;
-    }
-
-    // Success simulation
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    Alert.alert(
-      'Password Updated 🔒',
-      'Your password has been changed successfully.'
-    );
-  };
-
-  const handleRunDiagnosticTest = async () => {
-    setIsRunningTest(true);
-    try {
-      const result = await testBackendDiagnostics();
-      setDiagnosticResult(result);
-      if (result.connected) {
-        Alert.alert(
-          'Live Database Verified! ✅',
-          `Successfully connected to ${BACKEND_BASE_URL}!\n\nLatency: ${result.latencyMs}ms\nUsers in DB: ${result.usersCount}\nPantry items: ${result.groceriesCount}\nFriendships: ${result.friendsCount}`
-        );
-      } else {
-        Alert.alert(
-          'Connection Issue',
-          `Could not reach database: ${result.error || 'Server timeout'}`
-        );
-      }
-    } catch (err: any) {
-      Alert.alert('Diagnostic Error', err.message);
-    } finally {
-      setIsRunningTest(false);
-    }
-  };
-
-  const handleLogOut = () => {
-    Alert.alert('Log Out', 'Are you sure you want to log out of FridgeFriends?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Log Out',
-        style: 'destructive',
-        onPress: async () => {
-          if (supabaseUser) {
-            await logoutFromSupabase();
-            Alert.alert('Logged Out', 'You have been signed out of Supabase Cloud.');
-          } else {
-            Alert.alert('Logged Out', 'You have been signed out of your session.');
-          }
-        },
-      },
-    ]);
-  };
+  // Stacked Bar Data (Sample numbers matching Screen 7 in design spec)
+  const chartWeeks = [
+    { label: 'W1', spent: 58, wasted: 18 },
+    { label: 'W2', spent: 65, wasted: 8 },
+    { label: 'W3', spent: 48, wasted: 12 },
+    { label: 'W4', spent: 72, wasted: 6 },
+    { label: 'W5', spent: 55, wasted: 8 },
+    { label: 'W6', spent: 62, wasted: 4 },
+  ];
 
   if (!backendSyncAttempted) {
     return (
-      <View style={styles.initialLoadingContainer}>
-        <ActivityIndicator size="large" color="#059669" />
-        <Text style={styles.initialLoadingTitle}>Connecting to Live Database...</Text>
-        <Text style={styles.initialLoadingSub}>
-          Loading account profile and impact metrics from server...
-        </Text>
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color={Colors.terracotta} />
       </View>
     );
   }
 
+  // Safe bottom padding for Android navigation bar
+  const safeBottomPadding = Math.max(insets.bottom, 16) + 120;
+
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          { paddingBottom: Math.max(insets.bottom, 16) + 100 },
-        ]}
+        contentContainerStyle={[styles.content, { paddingBottom: safeBottomPadding }]}
+        showsVerticalScrollIndicator={false}
       >
-        {/* Profile Hero Header */}
-        <View style={styles.heroCard}>
-          <View style={styles.avatarSection}>
-            <Pressable
-              onPress={handleOpenPhotoOptions}
-              style={styles.avatarPressable}
-              accessibilityLabel="Change profile picture"
-            >
-              {avatarUrl ? (
-                <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+        {/* Screen Header */}
+        <Text style={styles.screenHeading}>You</Text>
+
+        {/* SECTION 1: Buddy & Handle Card */}
+        <StickerCard backgroundColor={Colors.paper} borderRadius={24} style={styles.buddyCard}>
+          <View style={styles.buddyHeaderRow}>
+            {/* Buddy Mascot Sticker or Custom Uploaded Photo */}
+            <View style={styles.buddyAvatarBox}>
+              {currentUser.avatar_url ? (
+                <Image source={{ uri: currentUser.avatar_url }} style={styles.customAvatarImage} />
               ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Text style={styles.avatarPlaceholderText}>
-                    {currentUser.display_name.charAt(0)}
-                  </Text>
-                </View>
+                <FoodCharacter foodKey={buddyKey} mood="happy" size={56} animate={false} />
               )}
-              <View style={styles.avatarBadge}>
-                <Text style={styles.avatarBadgeIcon}>📷</Text>
-              </View>
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.userHandle}>@{currentUser.username || 'pantry.pal'}</Text>
+              <Text style={styles.buddyName}>Buddy: {buddyName}</Text>
+            </View>
+          </View>
+
+          {/* Action Buttons: Change buddy and Upload photo */}
+          <View style={styles.buddyActionsRow}>
+            <Pressable
+              style={styles.changeBuddyBtn}
+              onPress={() => setIsChangeBuddyVisible(true)}
+            >
+              <Text style={styles.changeBuddyBtnText}>Change buddy</Text>
             </Pressable>
 
-            {/* Quick buttons: Gallery or Camera */}
-            <View style={styles.photoQuickRow}>
-              <Pressable
-                style={styles.photoQuickBtn}
-                onPress={handlePickPhotoFromGallery}
-                accessibilityLabel="Choose from Gallery"
-              >
-                <Text style={styles.photoQuickBtnText}>🖼️ Gallery</Text>
-              </Pressable>
-              <Pressable
-                style={styles.photoQuickBtn}
-                onPress={handleTakePhotoWithCamera}
-                accessibilityLabel="Take Photo"
-              >
-                <Text style={styles.photoQuickBtnText}>📷 Camera</Text>
-              </Pressable>
-            </View>
+            <Pressable
+              style={styles.uploadPhotoBtn}
+              onPress={handleUploadProfilePhoto}
+            >
+              <Text style={styles.uploadPhotoBtnText}>Upload photo</Text>
+            </Pressable>
           </View>
+        </StickerCard>
 
-          <View style={styles.heroMeta}>
-            <Text style={styles.heroDisplayName}>
-              {currentUser.display_name}
-            </Text>
-            <Text style={styles.heroUsername}>@{currentUser.username}</Text>
-            <Text style={styles.heroEmail}>{currentUser.email}</Text>
-            <View style={styles.heroBadgesRow}>
-              <View style={styles.ecoBadge}>
-                <Text style={styles.ecoBadgeText}>🏆 Zero-Waste Champion</Text>
+        {/* SECTION 2: Account Settings */}
+        <View style={styles.sectionBlock}>
+          <Text style={styles.sectionHeading}>Account</Text>
+          <StickerCard backgroundColor={Colors.paper} borderRadius={22} style={styles.accountCard}>
+            {/* User ID Row */}
+            <View style={styles.accountRow}>
+              <View>
+                <Text style={styles.accountLabel}>User ID</Text>
+                <Text style={styles.accountValue}>@{currentUser.username || 'pantry.pal'}</Text>
               </View>
-              {supabaseUser ? (
-                <View style={styles.cloudSyncedBadge}>
-                  <Text style={styles.cloudSyncedBadgeText}>☁️ Cloud Synced</Text>
-                </View>
-              ) : (
-                <Pressable
-                  style={styles.cloudSignInBadge}
-                  onPress={openAuthModal}
-                  accessibilityLabel="Sign in with Supabase"
-                >
-                  <Text style={styles.cloudSignInBadgeText}>✨ Sign In</Text>
-                </Pressable>
-              )}
+              <Pressable
+                style={styles.accountActionBtn}
+                onPress={() =>
+                  Alert.alert('Edit User ID', `Current user ID is @${currentUser.username}`)
+                }
+              >
+                <Text style={styles.accountActionText}>Edit</Text>
+              </Pressable>
             </View>
-          </View>
+
+            {/* Password Row */}
+            <View style={[styles.accountRow, styles.accountRowBorder]}>
+              <View>
+                <Text style={styles.accountLabel}>Password</Text>
+                <Text style={styles.accountValue}>••••••••</Text>
+              </View>
+              <Pressable
+                style={styles.accountActionBtn}
+                onPress={() => Alert.alert('Change Password', 'Password change request initiated.')}
+              >
+                <Text style={styles.accountActionText}>Change</Text>
+              </Pressable>
+            </View>
+
+            {/* Revisit Onboarding Survey Row */}
+            <View style={[styles.accountRow, styles.accountRowBorder]}>
+              <View>
+                <Text style={styles.accountLabel}>Onboarding Survey</Text>
+                <Text style={styles.accountValue}>Revisit buddy & diet setup</Text>
+              </View>
+              <Pressable
+                style={styles.accountActionBtn}
+                onPress={() =>
+                  router.push({
+                    pathname: '/onboarding',
+                    params: {
+                      buddyKey,
+                      buddyName: buddyName.split(' ')[0],
+                      userId: currentUser.username,
+                    },
+                  })
+                }
+              >
+                <Text style={styles.accountActionText}>Survey</Text>
+              </Pressable>
+            </View>
+          </StickerCard>
         </View>
 
-        {/* Supabase Cloud Account Card */}
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeaderRow}>
-            <View style={styles.cloudHeaderTitleRow}>
-              <Text style={styles.sectionTitle}>☁️ Cloud Account</Text>
-              <View
-                style={[
-                  styles.cloudStatusPill,
-                  supabaseUser ? styles.cloudStatusPillActive : styles.cloudStatusPillGuest,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.cloudStatusPillText,
-                    supabaseUser ? styles.cloudStatusPillTextActive : styles.cloudStatusPillTextGuest,
-                  ]}
-                >
-                  {supabaseUser ? '🟢 Supabase Connected' : '🟡 Guest Session'}
+        {/* SECTION 3: Friends */}
+        <View style={styles.sectionBlock}>
+          <Text style={styles.sectionHeading}>Friends ({friends.length})</Text>
+          <StickerCard backgroundColor={Colors.paper} borderRadius={22} style={styles.friendsCard}>
+            {friends.length === 0 ? (
+              <View style={styles.emptyFriendsBox}>
+                <Text style={styles.emptyFriendsTitle}>No friends added yet</Text>
+                <Text style={styles.emptyFriendsSub}>
+                  Invite a friend below using their user ID to view their shared fridge and plan feasts together!
                 </Text>
               </View>
-            </View>
-          </View>
+            ) : (
+              friends.map((friend, idx) => {
+                const initial = friend.display_name.charAt(0).toUpperCase();
+                const isLast = idx === friends.length - 1;
+                const friendItems = getFriendFridgeItems(friend.id);
 
-          {supabaseUser ? (
-            <View style={styles.cloudDetailsBox}>
-              <Text style={styles.cloudDetailsSub}>
-                Your pantry groceries, friendships, and feasts are linked to your Supabase identity:
-              </Text>
-              <View style={styles.cloudInfoRow}>
-                <Text style={styles.cloudInfoLabel}>Supabase Email:</Text>
-                <Text style={styles.cloudInfoVal}>{supabaseUser.email}</Text>
-              </View>
-              <View style={styles.cloudInfoRow}>
-                <Text style={styles.cloudInfoLabel}>Database User ID:</Text>
-                <Text style={styles.cloudInfoVal}>#{activeBackendUserId}</Text>
-              </View>
-              <View style={styles.cloudInfoRow}>
-                <Text style={styles.cloudInfoLabel}>Auth Status:</Text>
-                <Text style={styles.cloudInfoValSuccess}>Verified Session</Text>
-              </View>
+                return (
+                  <Pressable
+                    key={friend.id}
+                    style={[styles.friendItemRow, !isLast && styles.friendItemBorder]}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/friend/[id]',
+                        params: { id: friend.id },
+                      })
+                    }
+                  >
+                    <View style={styles.friendInitialCircle}>
+                      <Text style={styles.friendInitialText}>{initial}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.friendItemName}>{friend.display_name.split(' ')[0]}</Text>
+                      <Text style={styles.friendItemSub}>
+                        {friendItems.length === 0
+                          ? 'Empty fridge'
+                          : `${friendItems.length} ${friendItems.length === 1 ? 'item' : 'items'} in fridge`}
+                      </Text>
+                    </View>
+                    <Text style={styles.friendChevron}>›</Text>
+                  </Pressable>
+                );
+              })
+            )}
+          </StickerCard>
 
-              <Pressable
-                style={styles.cloudSignOutBtn}
-                onPress={handleLogOut}
-                accessibilityLabel="Sign Out of Supabase"
-              >
-                <Text style={styles.cloudSignOutBtnText}>Sign Out of Supabase</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <View style={styles.cloudDetailsBox}>
-              <Text style={styles.cloudDetailsSub}>
-                You are currently browsing with backend user #{activeBackendUserId} ({currentUser.display_name}).
-                Sign in or create an account with email to secure your data and seamlessly collaborate with friends!
-              </Text>
-
-              <Pressable
-                style={styles.cloudSignInPrimaryBtn}
-                onPress={openAuthModal}
-                accessibilityLabel="Sign In or Create Account"
-              >
-                <Text style={styles.cloudSignInPrimaryBtnText}>✨ Sign In / Create Account</Text>
-              </Pressable>
-            </View>
-          )}
-        </View>
-
-        {/* Overall Food Rescued Section */}
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>🌱 Overall Food Rescued</Text>
-          </View>
-          <Text style={styles.sectionSubtitle}>
-            Your cumulative impact preventing good food from going to waste:
-          </Text>
-
-          {/* Total Highlight Bar */}
-          <View style={styles.totalImpactBanner}>
-            <View style={styles.totalImpactItem}>
-              <Text style={styles.totalImpactValue}>{totalRescuedKg} kg</Text>
-              <Text style={styles.totalImpactLabel}>Total Food Rescued</Text>
-            </View>
-            <View style={styles.impactDivider} />
-            <View style={styles.totalImpactItem}>
-              <Text style={styles.totalImpactValue}>${totalDollars}</Text>
-              <Text style={styles.totalImpactLabel}>Total Dollars Saved</Text>
-            </View>
-          </View>
-
-          {/* Breakdown: Solo vs Friends */}
-          <View style={styles.breakdownRow}>
-            {/* Card 1: Solo */}
-            <View style={styles.breakdownCard}>
-              <View style={styles.breakdownHeader}>
-                <Text style={styles.breakdownIcon}>👤</Text>
-                <Text style={styles.breakdownTitle}>Rescued Solo</Text>
-              </View>
-              <Text style={styles.breakdownValue}>
-                {(soloRescuedGrams / 1000).toFixed(1)} kg
-              </Text>
-              <Text style={styles.breakdownSub}>
-                ${soloDollarsSaved.toFixed(2)} saved
-              </Text>
-              <Text style={styles.breakdownMeta}>
-                From quick waste-reduction meals
-              </Text>
-            </View>
-
-            {/* Card 2: With Friends */}
-            <View style={styles.breakdownCardCollab}>
-              <View style={styles.breakdownHeader}>
-                <Text style={styles.breakdownIcon}>👥</Text>
-                <Text style={styles.breakdownTitle}>With Friends</Text>
-              </View>
-              <Text style={styles.breakdownValueCollab}>
-                {(feastRescuedGrams / 1000).toFixed(1)} kg
-              </Text>
-              <Text style={styles.breakdownSubCollab}>
-                ${feastDollarsSaved.toFixed(2)} saved
-              </Text>
-              <Text style={styles.breakdownMeta}>
-                From collaborative Feast Mode
-              </Text>
-            </View>
-          </View>
-
-          {/* Environmental Eco Stats */}
-          <View style={styles.ecoStatsContainer}>
-            <View style={styles.ecoStatPill}>
-              <Text style={styles.ecoStatIcon}>🍽️</Text>
-              <Text style={styles.ecoStatText}>
-                {totalMealsSaved} meals rescued
-              </Text>
-            </View>
-            <View style={styles.ecoStatPill}>
-              <Text style={styles.ecoStatIcon}>☁️</Text>
-              <Text style={styles.ecoStatText}>
-                {co2AvoidedKg} kg CO₂e avoided
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Backend Live Database Status & Diagnostics */}
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>⚡ Live Database Connection</Text>
-            <View
-              style={[
-                styles.liveStatusBadge,
-                backendConnected
-                  ? styles.liveStatusConnected
-                  : styles.liveStatusOffline,
-              ]}
+          {/* Invite a Friend Input Box */}
+          <Text style={styles.inviteLabel}>Invite a friend</Text>
+          <View style={styles.inviteInputRow}>
+            <TextInput
+              style={styles.inviteInput}
+              placeholder="Their user ID"
+              placeholderTextColor={Colors.placeholder}
+              value={inviteUserId}
+              onChangeText={setInviteUserId}
+              autoCapitalize="none"
+            />
+            <Pressable
+              style={styles.inviteBtn}
+              onPress={handleInviteFriend}
+              disabled={isInviting}
             >
-              <Text
-                style={[
-                  styles.liveStatusText,
-                  backendConnected
-                    ? styles.liveStatusTextConnected
-                    : styles.liveStatusTextOffline,
-                ]}
-              >
-                {backendConnected
-                  ? `🟢 Live (${backendLatency ?? 0}ms)`
-                  : '🟡 Offline Cache'}
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.sectionSubtitle}>
-            Target: {BACKEND_BASE_URL}
-          </Text>
-
-          {/* Data Sources Breakdown */}
-          <View style={styles.dataSourcesTable}>
-            <Text style={styles.dataSourcesTableTitle}>📊 Data Sources Breakdown:</Text>
-            <View style={styles.dataSourceRow}>
-              <Text style={styles.dataSourceName}>• Pantry Groceries</Text>
-              <Text style={backendConnected ? styles.badgeDb : styles.badgeHardcoded}>
-                {backendConnected ? '🟢 Live Database' : '⚠️ Hardcoded'}
-              </Text>
-            </View>
-            <View style={styles.dataSourceRow}>
-              <Text style={styles.dataSourceName}>• Friends & Requests</Text>
-              <Text style={backendConnected ? styles.badgeDb : styles.badgeHardcoded}>
-                {backendConnected ? '🟢 Live Database' : '⚠️ Hardcoded'}
-              </Text>
-            </View>
-            <View style={styles.dataSourceRow}>
-              <Text style={styles.dataSourceName}>• Feast Mode Parties</Text>
-              <Text style={styles.badgeHardcoded}>⚠️ Hardcoded (No DB Table)</Text>
-            </View>
-            <View style={styles.dataSourceRow}>
-              <Text style={styles.dataSourceName}>• AI Rescued Recipes</Text>
-              <Text style={styles.badgeHardcoded}>⚠️ Local Generated (No DB Table)</Text>
-            </View>
+              <Text style={styles.inviteBtnText}>Invite</Text>
+            </Pressable>
           </View>
 
-          {/* User Switcher Buttons */}
-          <Text style={styles.switcherLabel}>
-            Switch Demo Account (Test Multi-User Collaboration):
+          <Text style={styles.privacyNote}>
+            Friends can see your yellow and red buddies so they can cook with you. Prices stay private.
           </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.userSwitcherScroll}
-          >
-            {[
-              { id: 14, name: 'Sam Perera', role: 'Host' },
-              { id: 15, name: 'Nadia Khan', role: 'Mutual Friend' },
-              { id: 16, name: 'Theo Alvarez', role: 'Mutual Friend' },
-              { id: 17, name: 'Mei Tanaka', role: 'Pending Friend' },
-              { id: 18, name: 'Obi Nwachukwu', role: 'Pending Friend' },
-            ].map((u) => {
-              const isActive = activeBackendUserId === u.id;
+        </View>
+
+        {/* SECTION 4: Food Preferences */}
+        <View style={styles.sectionBlock}>
+          <Text style={styles.sectionHeading}>Food preferences</Text>
+
+          {/* Diet */}
+          <Text style={styles.prefCategoryTitle}>Diet</Text>
+          <View style={styles.chipsWrap}>
+            {['Vegetarian', 'Vegan', 'Pescatarian', 'Gluten-free', 'Dairy-free'].map((diet) => {
+              const isSelected = selectedDiets.includes(diet);
               return (
                 <Pressable
-                  key={u.id}
-                  style={[
-                    styles.userSwitchPill,
-                    isActive && styles.userSwitchPillActive,
-                  ]}
-                  onPress={() => switchBackendUser(u.id)}
+                  key={diet}
+                  style={[styles.prefChip, isSelected && styles.prefChipActive]}
+                  onPress={() => toggleDiet(diet)}
                 >
-                  <Text
-                    style={[
-                      styles.userSwitchPillName,
-                      isActive && styles.userSwitchPillNameActive,
-                    ]}
-                  >
-                    {isActive ? '✓ ' : ''}{u.name}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.userSwitchPillRole,
-                      isActive && styles.userSwitchPillRoleActive,
-                    ]}
-                  >
-                    ID #{u.id} • {u.role}
+                  <Text style={[styles.prefChipText, isSelected && styles.prefChipTextActive]}>
+                    {diet}
                   </Text>
                 </Pressable>
               );
             })}
-          </ScrollView>
+          </View>
 
-          {/* On-Demand Diagnostics Test Button */}
-          <Pressable
-            style={[styles.testDiagnosticsBtn, isRunningTest && { opacity: 0.7 }]}
-            onPress={handleRunDiagnosticTest}
-            disabled={isRunningTest}
-          >
-            <Text style={styles.testDiagnosticsBtnText}>
-              {isRunningTest
-                ? '🔄 Querying Live Database...'
-                : '🧪 Test Live Database Connection'}
-            </Text>
-          </Pressable>
+          {/* Always avoid */}
+          <Text style={styles.prefCategoryTitle}>Always avoid</Text>
+          <View style={styles.chipsWrap}>
+            {['Peanuts', 'Shellfish', 'Tree nuts', 'Sesame'].map((avoid) => {
+              const isSelected = selectedAvoids.includes(avoid);
+              return (
+                <Pressable
+                  key={avoid}
+                  style={[styles.prefChip, isSelected && styles.prefChipAvoidActive]}
+                  onPress={() => toggleAvoid(avoid)}
+                >
+                  <Text style={[styles.prefChipText, isSelected && styles.prefChipTextAvoidActive]}>
+                    {avoid}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
 
-          {diagnosticResult && (
-            <View style={styles.diagnosticSummaryBox}>
-              <Text style={styles.diagnosticSummaryTitle}>
-                {diagnosticResult.connected
-                  ? '✅ Database Sync Health Check: Healthy'
-                  : '❌ Database Check: Disconnected'}
-              </Text>
-              <View style={styles.diagnosticMetricsRow}>
-                <View style={styles.diagnosticMetricItem}>
-                  <Text style={styles.diagnosticMetricValue}>
-                    {diagnosticResult.latencyMs}ms
+          {/* Cuisines I love */}
+          <Text style={styles.prefCategoryTitle}>Cuisines I love</Text>
+          <View style={styles.chipsWrap}>
+            {['Italian', 'Mexican', 'Korean', 'Indian', 'Mediterranean'].map((cuisine) => {
+              const isSelected = selectedCuisines.includes(cuisine);
+              return (
+                <Pressable
+                  key={cuisine}
+                  style={[styles.prefChip, isSelected && styles.prefChipActive]}
+                  onPress={() => toggleCuisine(cuisine)}
+                >
+                  <Text style={[styles.prefChipText, isSelected && styles.prefChipTextActive]}>
+                    {cuisine}
                   </Text>
-                  <Text style={styles.diagnosticMetricLabel}>Latency</Text>
-                </View>
-                <View style={styles.diagnosticMetricItem}>
-                  <Text style={styles.diagnosticMetricValue}>
-                    {diagnosticResult.usersCount}
-                  </Text>
-                  <Text style={styles.diagnosticMetricLabel}>Users</Text>
-                </View>
-                <View style={styles.diagnosticMetricItem}>
-                  <Text style={styles.diagnosticMetricValue}>
-                    {diagnosticResult.groceriesCount}
-                  </Text>
-                  <Text style={styles.diagnosticMetricLabel}>Pantry Items</Text>
-                </View>
-                <View style={styles.diagnosticMetricItem}>
-                  <Text style={styles.diagnosticMetricValue}>
-                    {diagnosticResult.friendsCount}
-                  </Text>
-                  <Text style={styles.diagnosticMetricLabel}>Friends</Text>
-                </View>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={styles.avoidEnforceNote}>
+            Everything in "Always avoid" is respected in every Feast recipe.
+          </Text>
+
+          {/* Save Preferences Button */}
+          <View style={styles.savePrefsWrap}>
+            <StickerButton
+              title={prefsSavedSuccess ? 'Preferences saved! ✓' : isSavingPrefs ? 'Saving...' : 'Save preferences'}
+              onPress={handleSavePreferences}
+              disabled={isSavingPrefs}
+              variant={prefsSavedSuccess ? 'secondary' : 'primary'}
+              size="large"
+            />
+          </View>
+        </View>
+
+        {/* SECTION 5: Waste and Spending */}
+        <View style={styles.sectionBlock}>
+          <View style={styles.wasteHeaderRow}>
+            <Text style={styles.sectionHeading}>Waste and spending</Text>
+            {/* Weeks vs Months Toggle */}
+            <View style={styles.segmentToggle}>
+              <Pressable
+                style={[styles.segmentBtn, period === 'weeks' && styles.segmentBtnActive]}
+                onPress={() => setPeriod('weeks')}
+              >
+                <Text
+                  style={[
+                    styles.segmentBtnText,
+                    period === 'weeks' && styles.segmentBtnTextActive,
+                  ]}
+                >
+                  Weeks
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.segmentBtn, period === 'months' && styles.segmentBtnActive]}
+                onPress={() => setPeriod('months')}
+              >
+                <Text
+                  style={[
+                    styles.segmentBtnText,
+                    period === 'months' && styles.segmentBtnTextActive,
+                  ]}
+                >
+                  Months
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* 3 KPI Stat Cards */}
+          <View style={styles.kpiCardsRow}>
+            <StickerCard backgroundColor={Colors.paper} borderRadius={18} style={styles.kpiCard}>
+              <Text style={styles.kpiLabel}>Spent</Text>
+              <Text style={styles.kpiValue}>$312</Text>
+            </StickerCard>
+
+            <StickerCard backgroundColor={Colors.paper} borderRadius={18} style={styles.kpiCard}>
+              <Text style={styles.kpiLabel}>Wasted</Text>
+              <Text style={[styles.kpiValue, { color: Colors.terracotta }]}>$27</Text>
+            </StickerCard>
+
+            <StickerCard backgroundColor={Colors.paper} borderRadius={18} style={styles.kpiCard}>
+              <Text style={styles.kpiLabel}>Rescued</Text>
+              <Text style={[styles.kpiValue, { color: Colors.fresh.text }]}>$41</Text>
+            </StickerCard>
+          </View>
+
+          {/* Stacked Bar Chart */}
+          <StickerCard backgroundColor={Colors.paper} borderRadius={22} style={styles.chartCard}>
+            <View style={styles.barsContainer}>
+              {chartWeeks.map((bar, bIdx) => {
+                const totalHeight = (bar.spent / 80) * 110;
+                const wastedHeight = (bar.wasted / 80) * 110;
+                const usedHeight = totalHeight - wastedHeight;
+
+                return (
+                  <View key={bIdx} style={styles.barColumn}>
+                    <View style={[styles.barPillar, { height: totalHeight }]}>
+                      {/* Top Wasted Segment */}
+                      <View style={[styles.wastedSegment, { height: wastedHeight }]} />
+                      {/* Lower Spent & Used Segment */}
+                      <View style={[styles.spentSegment, { height: usedHeight }]} />
+                    </View>
+                    <Text style={styles.barLabel}>{bar.label}</Text>
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Legend */}
+            <View style={styles.legendRow}>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendBox, { backgroundColor: Colors.sage }]} />
+                <Text style={styles.legendText}>Spent and used</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendBox, { backgroundColor: Colors.terracotta }]} />
+                <Text style={styles.legendText}>Wasted</Text>
               </View>
             </View>
-          )}
-        </View>
+          </StickerCard>
 
-        {/* Account Details Form (Standard Login Inputs) */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>👤 Account Information</Text>
-          <Text style={styles.sectionSubtitle}>
-            Update your display name, username, and contact email:
+          <Text style={styles.wasteTrendText}>
+            Waste is down from 17% of spending to 3% over six weeks.
           </Text>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Display Name</Text>
-            <TextInput
-              style={styles.textInput}
-              value={displayName}
-              onChangeText={setDisplayName}
-              placeholder="Your Name"
-              placeholderTextColor="#9CA3AF"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Username</Text>
-            <TextInput
-              style={styles.textInput}
-              value={username}
-              onChangeText={setUsername}
-              placeholder="username"
-              placeholderTextColor="#9CA3AF"
-              autoCapitalize="none"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Email Address</Text>
-            <TextInput
-              style={styles.textInput}
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          </View>
-
-          <Pressable
-            style={styles.primaryActionBtn}
-            onPress={handleSaveProfileDetails}
-          >
-            <Text style={styles.primaryActionBtnText}>
-              Save Profile Changes
-            </Text>
-          </Pressable>
         </View>
-
-        {/* Password & Security Form (Standard Password Inputs) */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>🔒 Edit Password</Text>
-          <Text style={styles.sectionSubtitle}>
-            Manage your password credentials:
-          </Text>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Current Password</Text>
-            <TextInput
-              style={styles.textInput}
-              value={currentPassword}
-              onChangeText={setCurrentPassword}
-              placeholder="••••••••"
-              placeholderTextColor="#9CA3AF"
-              secureTextEntry
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>New Password</Text>
-            <TextInput
-              style={styles.textInput}
-              value={newPassword}
-              onChangeText={setNewPassword}
-              placeholder="At least 6 characters"
-              placeholderTextColor="#9CA3AF"
-              secureTextEntry
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Confirm New Password</Text>
-            <TextInput
-              style={styles.textInput}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              placeholder="Re-type new password"
-              placeholderTextColor="#9CA3AF"
-              secureTextEntry
-            />
-          </View>
-
-          <Pressable
-            style={styles.securityActionBtn}
-            onPress={handleUpdatePassword}
-          >
-            <Text style={styles.primaryActionBtnText}>Update Password</Text>
-          </Pressable>
-        </View>
-
-        {/* Log Out Button */}
-        <Pressable style={styles.logOutBtn} onPress={handleLogOut}>
-          <Text style={styles.logOutBtnText}>Log Out of Session</Text>
-        </Pressable>
       </ScrollView>
-    </KeyboardAvoidingView>
+
+      {/* Change Buddy Modal */}
+      <ChangeBuddyModal
+        visible={isChangeBuddyVisible}
+        currentBuddyKey={buddyKey}
+        onSelectBuddy={(key, name) => {
+          setBuddyKey(key);
+          const found = STARTER_BUDDIES.find((b) => b.key === key);
+          setBuddyName(found ? found.desc : name);
+        }}
+        onClose={() => setIsChangeBuddyVisible(false)}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: Colors.cream,
+  },
+  loadingScreen: {
+    flex: 1,
+    backgroundColor: Colors.cream,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   content: {
-    padding: 16,
-    paddingBottom: 50,
-  },
-
-  /* Hero Card */
-  heroCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  avatarSection: {
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  avatarImage: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    borderWidth: 2,
-    borderColor: '#2563EB',
-  },
-  avatarPlaceholder: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: '#2563EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarPlaceholderText: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: 'bold',
-  },
-  avatarPressable: {
-    position: 'relative',
-  },
-  avatarBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: '#2563EB',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    borderRadius: 12,
-    width: 24,
-    height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarBadgeIcon: {
-    fontSize: 11,
-  },
-  photoQuickRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 8,
-  },
-  photoQuickBtn: {
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    borderRadius: 12,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-  },
-  photoQuickBtnText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#1D4ED8',
-  },
-  heroMeta: {
-    flex: 1,
-  },
-  heroDisplayName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  heroUsername: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginTop: 1,
-  },
-  heroEmail: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginTop: 2,
-  },
-  ecoBadge: {
-    backgroundColor: '#DCFCE7',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  ecoBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#166534',
-  },
-  heroBadgesRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 6,
-    alignItems: 'center',
-  },
-  cloudSyncedBadge: {
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    alignSelf: 'flex-start',
-  },
-  cloudSyncedBadgeText: {
-    color: '#047857',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  cloudSignInBadge: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    alignSelf: 'flex-start',
-  },
-  cloudSignInBadgeText: {
-    color: '#1D4ED8',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  cloudHeaderTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-  },
-  cloudStatusPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  cloudStatusPillActive: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#A7F3D0',
-  },
-  cloudStatusPillGuest: {
-    backgroundColor: '#FEF3C7',
-    borderColor: '#FDE68A',
-  },
-  cloudStatusPillText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  cloudStatusPillTextActive: {
-    color: '#065F46',
-  },
-  cloudStatusPillTextGuest: {
-    color: '#92400E',
-  },
-  cloudDetailsBox: {
-    marginTop: 10,
-  },
-  cloudDetailsSub: {
-    fontSize: 13,
-    color: '#4B5563',
-    lineHeight: 18,
-    marginBottom: 12,
-  },
-  cloudInfoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  cloudInfoLabel: {
-    fontSize: 13,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  cloudInfoVal: {
-    fontSize: 13,
-    color: '#111827',
-    fontWeight: '600',
-  },
-  cloudInfoValSuccess: {
-    fontSize: 13,
-    color: '#059669',
-    fontWeight: '700',
-  },
-  cloudSignInPrimaryBtn: {
-    backgroundColor: '#059669',
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 6,
-    shadowColor: '#059669',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  cloudSignInPrimaryBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  cloudSignOutBtn: {
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    paddingVertical: 10,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 14,
-  },
-  cloudSignOutBtnText: {
-    color: '#DC2626',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-
-  /* Section Card */
-  sectionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 16,
-    marginBottom: 16,
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  sectionSubtitle: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 2,
-    marginBottom: 12,
-  },
-
-  /* Total Impact Banner */
-  totalImpactBanner: {
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    borderRadius: 12,
-    paddingVertical: 14,
     paddingHorizontal: 16,
+    paddingTop: 54,
+    gap: 20,
+  },
+  screenHeading: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 28,
+    color: Colors.ink,
+  },
+  buddyCard: {
+    padding: 16,
+  },
+  buddyHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
-    marginBottom: 12,
+    gap: 14,
+    marginBottom: 14,
   },
-  totalImpactItem: {
+  buddyAvatarBox: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: '#FDEBD0',
+    borderWidth: 2,
+    borderColor: Colors.ink,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  totalImpactValue: {
+  userHandle: {
+    fontFamily: Fonts.headingBold,
     fontSize: 20,
-    fontWeight: '800',
-    color: '#047857',
+    color: Colors.ink,
   },
-  totalImpactLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#065F46',
+  buddyName: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 14,
+    color: '#76665A',
     marginTop: 2,
   },
-  impactDivider: {
-    width: 1,
-    height: 36,
-    backgroundColor: '#A7F3D0',
+  customAvatarImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
   },
-
-  /* Breakdown Row */
-  breakdownRow: {
+  buddyActionsRow: {
     flexDirection: 'row',
     gap: 10,
-    marginBottom: 10,
   },
-  breakdownCard: {
+  changeBuddyBtn: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 12,
-  },
-  breakdownCardCollab: {
-    flex: 1,
-    backgroundColor: '#EFF6FF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    padding: 12,
-  },
-  breakdownHeader: {
-    flexDirection: 'row',
+    backgroundColor: Colors.paper,
+    borderWidth: 2,
+    borderColor: Colors.ink,
+    borderRadius: 20,
+    paddingVertical: 10,
     alignItems: 'center',
-    gap: 4,
+  },
+  changeBuddyBtnText: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 14,
+    color: Colors.ink,
+  },
+  uploadPhotoBtn: {
+    flex: 1,
+    backgroundColor: '#F7E7D2',
+    borderWidth: 2,
+    borderColor: Colors.ink,
+    borderRadius: 20,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  uploadPhotoBtnText: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 14,
+    color: Colors.ink,
+  },
+  sectionBlock: {
+    gap: 8,
+  },
+  sectionHeading: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 20,
+    color: Colors.ink,
     marginBottom: 4,
   },
-  breakdownIcon: {
-    fontSize: 14,
+  accountCard: {
+    padding: 16,
   },
-  breakdownTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#374151',
-  },
-  breakdownValue: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#111827',
-  },
-  breakdownSub: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#059669',
-    marginTop: 1,
-  },
-  breakdownValueCollab: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#1D4ED8',
-  },
-  breakdownSubCollab: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#2563EB',
-    marginTop: 1,
-  },
-  breakdownMeta: {
-    fontSize: 10,
-    color: '#6B7280',
-    marginTop: 4,
-  },
-
-  /* Eco Stats Pill */
-  ecoStatsContainer: {
+  accountRow: {
     flexDirection: 'row',
-    gap: 8,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  accountRowBorder: {
+    borderTopWidth: 1.5,
+    borderTopColor: '#EBE0CE',
+    marginTop: 8,
+    paddingTop: 12,
+  },
+  accountLabel: {
+    fontFamily: Fonts.bodyRegular,
+    fontSize: 13,
+    color: '#76665A',
+  },
+  accountValue: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 16,
+    color: Colors.ink,
     marginTop: 2,
   },
-  ecoStatPill: {
-    flex: 1,
+  accountActionBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  accountActionText: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 15,
+    color: Colors.terracotta,
+  },
+  friendsCard: {
+    padding: 12,
+  },
+  friendItemRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    gap: 6,
-  },
-  ecoStatIcon: {
-    fontSize: 14,
-  },
-  ecoStatText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#4B5563',
-  },
-
-  /* Input Fields */
-  inputGroup: {
-    marginBottom: 10,
-  },
-  inputLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 4,
-  },
-  textInput: {
-    backgroundColor: '#F9FAFB',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    paddingHorizontal: 12,
+    gap: 12,
     paddingVertical: 8,
-    fontSize: 14,
-    color: '#111827',
   },
-
-  /* Action Buttons */
-  primaryActionBtn: {
-    backgroundColor: '#2563EB',
-    paddingVertical: 10,
-    borderRadius: 8,
+  friendItemBorder: {
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#EBE0CE',
+  },
+  friendInitialCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FDEBD0',
+    borderWidth: 2,
+    borderColor: Colors.ink,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 6,
   },
-  securityActionBtn: {
-    backgroundColor: '#059669',
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 6,
+  friendInitialText: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 16,
+    color: Colors.ink,
   },
-  primaryActionBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
+  friendItemName: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 16,
+    color: Colors.ink,
+  },
+  friendItemSub: {
+    fontFamily: Fonts.bodyRegular,
     fontSize: 13,
+    color: '#76665A',
   },
-
-  /* Log Out Button */
-  logOutBtn: {
-    backgroundColor: '#FEE2E2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    paddingVertical: 12,
-    borderRadius: 10,
+  friendChevron: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 22,
+    color: '#8A776A',
+    paddingHorizontal: 4,
+  },
+  emptyFriendsBox: {
+    padding: 16,
     alignItems: 'center',
+    gap: 4,
+  },
+  emptyFriendsTitle: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 16,
+    color: Colors.ink,
+  },
+  emptyFriendsSub: {
+    fontFamily: Fonts.bodyRegular,
+    fontSize: 13,
+    color: '#76665A',
+    textAlign: 'center',
+  },
+  savePrefsWrap: {
+    marginTop: 14,
+  },
+  inviteLabel: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 15,
+    color: Colors.ink,
+    marginTop: 8,
+  },
+  inviteInputRow: {
+    flexDirection: 'row',
+    gap: 10,
     marginTop: 4,
-    marginBottom: 20,
   },
-  logOutBtnText: {
-    color: '#DC2626',
-    fontWeight: '700',
+  inviteInput: {
+    flex: 1,
+    height: 46,
+    backgroundColor: Colors.paper,
+    borderWidth: 2,
+    borderColor: Colors.ink,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 15,
+    color: Colors.ink,
+  },
+  inviteBtn: {
+    backgroundColor: Colors.terracotta,
+    borderWidth: 2,
+    borderColor: Colors.ink,
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  inviteBtnText: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 15,
+    color: '#FFFFFF',
+  },
+  privacyNote: {
+    fontFamily: Fonts.bodyRegular,
+    fontSize: 13,
+    color: '#76665A',
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  prefCategoryTitle: {
+    fontFamily: Fonts.headingSemiBold,
     fontSize: 14,
-  },
-
-
-  /* Data Sources Breakdown Table */
-  dataSourcesTable: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 8,
-    padding: 10,
+    color: '#76665A',
     marginTop: 8,
     marginBottom: 6,
   },
-  dataSourcesTableTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
-    marginBottom: 6,
-  },
-  dataSourceRow: {
+  chipsWrap: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 3,
-  },
-  dataSourceName: {
-    fontSize: 11,
-    color: '#334155',
-    fontWeight: '500',
-  },
-  badgeDb: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#15803D',
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  badgeHardcoded: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#92400E',
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-
-  /* Live Database Diagnostics Styles */
-  liveStatusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-  },
-  liveStatusConnected: {
-    backgroundColor: '#DCFCE7',
-  },
-  liveStatusOffline: {
-    backgroundColor: '#FEF3C7',
-  },
-  liveStatusText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  liveStatusTextConnected: {
-    color: '#15803D',
-  },
-  liveStatusTextOffline: {
-    color: '#B45309',
-  },
-  switcherLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#374151',
-    marginTop: 10,
-    marginBottom: 8,
-  },
-  userSwitcherScroll: {
+    flexWrap: 'wrap',
     gap: 8,
-    paddingBottom: 6,
   },
-  userSwitchPill: {
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    alignItems: 'center',
-    marginRight: 6,
+  prefChip: {
+    backgroundColor: Colors.paper,
+    borderWidth: 2,
+    borderColor: Colors.ink,
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
   },
-  userSwitchPillActive: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#2563EB',
+  prefChipActive: {
+    backgroundColor: Colors.fresh.bg,
   },
-  userSwitchPillName: {
+  prefChipAvoidActive: {
+    backgroundColor: Colors.now.bg,
+  },
+  prefChipText: {
+    fontFamily: Fonts.headingMedium,
+    fontSize: 14,
+    color: Colors.ink,
+  },
+  prefChipTextActive: {
+    color: Colors.fresh.text,
+  },
+  prefChipTextAvoidActive: {
+    color: Colors.now.text,
+  },
+  avoidEnforceNote: {
+    fontFamily: Fonts.bodyRegular,
     fontSize: 13,
-    fontWeight: '700',
-    color: '#374151',
+    color: '#76665A',
+    lineHeight: 18,
+    marginTop: 8,
   },
-  userSwitchPillNameActive: {
-    color: '#1D4ED8',
-  },
-  userSwitchPillRole: {
-    fontSize: 10,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  userSwitchPillRoleActive: {
-    color: '#2563EB',
-    fontWeight: '600',
-  },
-  testDiagnosticsBtn: {
-    backgroundColor: '#0F172A',
-    borderRadius: 8,
-    paddingVertical: 10,
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  testDiagnosticsBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 13,
-  },
-  diagnosticSummaryBox: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 10,
-  },
-  diagnosticSummaryTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 8,
-  },
-  diagnosticMetricsRow: {
+  wasteHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-  },
-  diagnosticMetricItem: {
     alignItems: 'center',
+    marginBottom: 8,
   },
-  diagnosticMetricValue: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#2563EB',
+  segmentToggle: {
+    flexDirection: 'row',
+    backgroundColor: Colors.ink,
+    borderRadius: 18,
+    padding: 2,
   },
-  diagnosticMetricLabel: {
-    fontSize: 10,
-    color: '#64748B',
-    marginTop: 2,
+  segmentBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 16,
   },
-  initialLoadingContainer: {
+  segmentBtnActive: {
+    backgroundColor: Colors.paper,
+  },
+  segmentBtnText: {
+    fontFamily: Fonts.headingMedium,
+    fontSize: 13,
+    color: '#FFFFFF',
+  },
+  segmentBtnTextActive: {
+    color: Colors.ink,
+  },
+  kpiCardsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 12,
+  },
+  kpiCard: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
-    justifyContent: 'center',
+    padding: 12,
     alignItems: 'center',
-    padding: 24,
   },
-  initialLoadingTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
+  kpiLabel: {
+    fontFamily: Fonts.bodyRegular,
+    fontSize: 13,
+    color: '#76665A',
+    marginBottom: 2,
+  },
+  kpiValue: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 22,
+    color: Colors.ink,
+  },
+  chartCard: {
+    padding: 18,
+  },
+  barsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    height: 130,
+    paddingBottom: 10,
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#EBE0CE',
+  },
+  barColumn: {
+    alignItems: 'center',
+    gap: 6,
+  },
+  barPillar: {
+    width: 32,
+    borderRadius: 6,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: Colors.ink,
+    justifyContent: 'flex-end',
+  },
+  wastedSegment: {
+    backgroundColor: Colors.terracotta,
+    width: '100%',
+  },
+  spentSegment: {
+    backgroundColor: Colors.sage,
+    width: '100%',
+  },
+  barLabel: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 12,
+    color: Colors.ink,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 20,
     marginTop: 14,
   },
-  initialLoadingSub: {
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendBox: {
+    width: 14,
+    height: 14,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: Colors.ink,
+  },
+  legendText: {
+    fontFamily: Fonts.bodySemiBold,
     fontSize: 13,
-    color: '#6B7280',
-    marginTop: 4,
-    textAlign: 'center',
+    color: Colors.ink,
+  },
+  wasteTrendText: {
+    fontFamily: Fonts.bodyRegular,
+    fontSize: 13,
+    color: '#76665A',
+    marginTop: 6,
   },
 });
