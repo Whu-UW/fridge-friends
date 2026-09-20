@@ -21,7 +21,14 @@ export default function CookAndCheckinScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { getRecipe, removeFridgeItem, fridgeItems, backendSyncAttempted } = useApp();
+  const {
+    getRecipe,
+    removeFridgeItem,
+    recordRescuedMeal,
+    recordWastedMeal,
+    fridgeItems,
+    backendSyncAttempted,
+  } = useApp();
 
   const [isRescuedModalVisible, setIsRescuedModalVisible] = useState(false);
   const [isCrushedModalVisible, setIsCrushedModalVisible] = useState(false);
@@ -56,29 +63,12 @@ export default function CookAndCheckinScreen() {
 
   // Outcome Handlers
   const handleMarkRescued = () => {
-    // Mark matching user fridge items as consumed/used
-    recipe.focusExpiringItems.forEach((foodName) => {
-      const match = fridgeItems.find(
-        (i) => i.name.toLowerCase().includes(foodName.toLowerCase())
-      );
-      if (match) {
-        removeFridgeItem(match.id);
-      }
-    });
+    recordRescuedMeal(rescuedFoods, dollarsSaved, recipe.title);
     setIsRescuedModalVisible(true);
   };
 
   const handleMarkFailed = () => {
-    // Mark the most urgent item as tossed/crushed
-    if (recipe.focusExpiringItems.length > 0) {
-      const firstFood = recipe.focusExpiringItems[0];
-      const match = fridgeItems.find(
-        (i) => i.name.toLowerCase().includes(firstFood.toLowerCase())
-      );
-      if (match) {
-        removeFridgeItem(match.id);
-      }
-    }
+    recordWastedMeal(rescuedFoods.slice(0, 1), 3.49, recipe.title);
     setIsCrushedModalVisible(true);
   };
 
@@ -86,11 +76,6 @@ export default function CookAndCheckinScreen() {
     setIsRescuedModalVisible(false);
     setIsCrushedModalVisible(false);
     router.replace('/(tabs)');
-  };
-
-  const handleTryAnother = () => {
-    setIsCrushedModalVisible(false);
-    router.replace('/rescue');
   };
 
   const safeBottomPadding = Math.max(insets.bottom, 16) + 30;
@@ -192,7 +177,6 @@ export default function CookAndCheckinScreen() {
         onlookerNames={rescuedFoods.slice(1, 3)}
         wastedAmount={3.49}
         onClose={() => setIsCrushedModalVisible(false)}
-        onTryAnother={handleTryAnother}
         onBackToShelf={handleReturnToShelf}
       />
     </View>

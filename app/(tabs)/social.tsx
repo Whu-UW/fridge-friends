@@ -13,6 +13,9 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, FriendEntry } from '../../context/AppContext';
+import { Colors, Fonts } from '../../constants/Theme';
+import StickerCard from '../../components/ui/StickerCard';
+import StickerButton from '../../components/ui/StickerButton';
 
 export default function SocialScreen() {
   const router = useRouter();
@@ -23,34 +26,49 @@ export default function SocialScreen() {
     acceptFriendRequest,
     removeFriend,
     getFriendFridgeItems,
-    backendConnected,
     backendSyncAttempted,
   } = useApp();
 
-  // Add Friend Input State
-  const [newUsername, setNewUsername] = useState('');
-  const [newDisplayName, setNewDisplayName] = useState('');
-  const [isAddingVisible, setIsAddingVisible] = useState(false);
+  // Invite friend input state
+  const [inviteUserId, setInviteUserId] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Filter friends: only mutual (accepted) and pending requests
+  // Split into accepted and pending requests
   const acceptedFriends = friends.filter((f) => f.status === 'accepted');
-  const pendingFriends = friends.filter((f) => f.status === 'pending');
+  const pendingRequests = friends.filter((f) => f.status === 'pending');
 
-  const handleAddFriendSubmit = () => {
-    const trimmedUser = newUsername.trim();
-    if (!trimmedUser) {
-      Alert.alert('Validation Error', 'Please enter a username.');
+  const handleInviteSubmit = () => {
+    const trimmed = inviteUserId.trim().replace('@', '');
+    if (!trimmed) {
+      Alert.alert('User ID Required', 'Please enter a friend’s username or user ID.');
       return;
     }
 
-    addFriend(trimmedUser, newDisplayName.trim());
-    setNewUsername('');
-    setNewDisplayName('');
-    setIsAddingVisible(false);
-    Alert.alert(
-      'Friend Request Sent',
-      `Sent friend request to @${trimmedUser.replace('@', '')}. Once accepted, you can inspect each other's fridges!`
-    );
+    setIsSubmitting(true);
+    try {
+      addFriend(trimmed);
+      setInviteUserId('');
+      Alert.alert(
+        'Invite Sent! 🎉',
+        `Friend request sent to @${trimmed}. Once accepted, you can view each other's fridges and cook feasts!`
+      );
+    } catch {
+      Alert.alert('Error', 'Could not send friend request.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleFriendClick = (friend: FriendEntry) => {
+    router.push({
+      pathname: '/(tabs)',
+      params: { friendId: friend.id },
+    });
+  };
+
+  const handleDeclineRequest = (friend: FriendEntry) => {
+    removeFriend(friend.id);
+    Alert.alert('Request Declined', `Declined friend request from @${friend.username}.`);
   };
 
   const handleConfirmRemoveFriend = (friend: FriendEntry) => {
@@ -68,544 +86,439 @@ export default function SocialScreen() {
     );
   };
 
-  // Safe bottom padding preventing Android navigation bar overlap
-  const safeBottomPadding = Math.max(insets.bottom, 16) + 100;
-
   if (!backendSyncAttempted) {
     return (
-      <View style={styles.initialLoadingContainer}>
-        <ActivityIndicator size="large" color="#B4523A" />
-        <Text style={styles.initialLoadingTitle}>Loading Friends...</Text>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={Colors.terracotta} />
       </View>
     );
   }
 
+  const safeBottomPadding = Math.max(insets.bottom, 16) + 60;
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={[styles.content, { paddingBottom: safeBottomPadding }]}
-    >
-      {/* SECTION: Friends Header & Controls */}
-      <View style={styles.sectionBlock}>
-        <View style={styles.sectionHeaderRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.sectionHeading}>
-              👥 Friends &amp; Fridges ({acceptedFriends.length})
-            </Text>
-            <Text style={styles.sectionSubheading}>
-              Inspect friends' fridges and pool ingredients to prevent food waste.
-            </Text>
-          </View>
-          <Pressable
-            style={styles.toggleAddBtn}
-            onPress={() => setIsAddingVisible((prev) => !prev)}
-          >
-            <Text style={styles.toggleAddBtnText}>
-              {isAddingVisible ? '✕ Cancel' : '+ Add Friend'}
-            </Text>
-          </Pressable>
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) + 12 }]}>
+        <View>
+          <Text style={styles.headerTitle}>Friends 👥</Text>
+          <Text style={styles.headerSubtitle}>
+            Inspect fridges and cook together to end waste
+          </Text>
         </View>
+        <View style={styles.countBadge}>
+          <Text style={styles.countBadgeText}>{acceptedFriends.length}</Text>
+        </View>
+      </View>
 
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: safeBottomPadding }]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ============================================================
+            1. VERY TOP: INVITE A FRIEND INPUT
+        ============================================================ */}
+        <StickerCard backgroundColor={Colors.paper} borderRadius={22} style={styles.inviteCard}>
+          <Text style={styles.inviteHeading}>Invite a friend</Text>
+          <Text style={styles.inviteSubtext}>
+            Enter their username or User ID to share fridge items
+          </Text>
 
-        {/* Add Friend Input Box */}
-        {isAddingVisible && (
-          <View style={styles.addFriendBox}>
-            <Text style={styles.addFriendBoxTitle}>Send Friend Request</Text>
-            <View style={styles.addFriendInputRow}>
-              <TextInput
-                style={[styles.addFriendInput, { flex: 1.5 }]}
-                placeholder="Username (e.g. jamie_chef)"
-                value={newUsername}
-                onChangeText={setNewUsername}
-                placeholderTextColor="#9CA3AF"
-                autoCapitalize="none"
-              />
-              <TextInput
-                style={[styles.addFriendInput, { flex: 1 }]}
-                placeholder="Name (Optional)"
-                value={newDisplayName}
-                onChangeText={setNewDisplayName}
-                placeholderTextColor="#9CA3AF"
-              />
-              <Pressable
-                style={styles.submitFriendBtn}
-                onPress={handleAddFriendSubmit}
+          <View style={styles.inviteInputRow}>
+            <TextInput
+              style={styles.inviteInput}
+              placeholder="Username or ID (e.g. nadia_khan)"
+              placeholderTextColor="#8A776A"
+              value={inviteUserId}
+              onChangeText={setInviteUserId}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <Pressable
+              style={[styles.inviteBtn, isSubmitting && styles.inviteBtnDisabled]}
+              onPress={handleInviteSubmit}
+              disabled={isSubmitting}
+            >
+              <Text style={styles.inviteBtnText}>+ Invite</Text>
+            </Pressable>
+          </View>
+        </StickerCard>
+
+        {/* ============================================================
+            2. TOP: PENDING FRIEND REQUESTS
+        ============================================================ */}
+        {pendingRequests.length > 0 && (
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionHeading}>
+              Pending Requests ({pendingRequests.length})
+            </Text>
+
+            {pendingRequests.map((friend) => (
+              <StickerCard
+                key={friend.id}
+                backgroundColor="#FFF8E7"
+                borderRadius={20}
+                style={styles.pendingCard}
               >
-                <Text style={styles.submitFriendBtnText}>Send</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
-
-        {/* Pending Friend Requests (if any) */}
-        {pendingFriends.length > 0 && (
-          <View style={styles.pendingSection}>
-            <Text style={styles.pendingSectionTitle}>
-              Pending Friend Requests ({pendingFriends.length})
-            </Text>
-            {pendingFriends.map((item) => (
-              <View key={item.id} style={styles.pendingFriendCard}>
-                <View style={styles.cardInfo}>
-                  <View style={styles.avatarPlaceholderPending}>
-                    <Text style={styles.avatarText}>
-                      {item.display_name.charAt(0)}
-                    </Text>
-                  </View>
-                  <View style={styles.friendMeta}>
-                    <Text style={styles.friendName}>{item.display_name}</Text>
-                    <Text style={styles.friendUsername}>@{item.username}</Text>
-                    <Text style={styles.pendingNoticeText}>
-                      ⏳ Waiting for mutual acceptance
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.pendingActions}>
-                  <Pressable
-                    style={styles.acceptRequestBtn}
-                    onPress={() => acceptFriendRequest(item.id)}
-                  >
-                    <Text style={styles.acceptRequestBtnText}>✓ Accept</Text>
-                  </Pressable>
-                  <Pressable
-                    style={styles.removeFriendBtn}
-                    onPress={() => handleConfirmRemoveFriend(item)}
-                  >
-                    <Text style={styles.removeFriendBtnText}>✕</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Mutually Added Friends & Their Fridges */}
-        <Text style={styles.subSectionTitle}>
-          Mutual Friends &amp; Fridges ({acceptedFriends.length})
-        </Text>
-
-        {acceptedFriends.length === 0 ? (
-          <View style={styles.emptyFriendsBox}>
-            <Text style={styles.emptyFriendsText}>
-              No mutual friends yet! Use "+ Add Friend" above to send an invite and share fridge items.
-            </Text>
-          </View>
-        ) : (
-          acceptedFriends.map((friend) => {
-            const friendItems = getFriendFridgeItems(friend.id);
-            const expiringItems = friendItems.filter((i) => {
-              const hours =
-                (new Date(i.expires_at).getTime() - Date.now()) / 36e5;
-              return hours > 0 && hours <= 72;
-            });
-            const expiringCount = expiringItems.length;
-
-            return (
-              <View key={friend.id} style={styles.friendFridgeCard}>
-                <View style={styles.friendHeaderRow}>
-                  <View style={styles.cardInfo}>
+                <View style={styles.pendingCardHeader}>
+                  <View style={styles.avatarBox}>
                     {friend.avatar_url ? (
-                      <Image
-                        source={{ uri: friend.avatar_url }}
-                        style={styles.avatarImage}
-                      />
+                      <Image source={{ uri: friend.avatar_url }} style={styles.avatarImg} />
                     ) : (
-                      <View style={styles.avatarPlaceholder}>
-                        <Text style={styles.avatarText}>
+                      <View style={styles.avatarFallback}>
+                        <Text style={styles.avatarFallbackText}>
                           {friend.display_name.charAt(0)}
                         </Text>
                       </View>
                     )}
-                    <View style={styles.friendMeta}>
-                      <Text style={styles.friendName}>{friend.display_name}</Text>
-                      <Text style={styles.friendUsername}>@{friend.username}</Text>
-                      <Text style={styles.inventoryCount}>
-                        🧊 {friendItems.length} items logged •{' '}
-                        <Text
-                          style={{
-                            color: expiringCount > 0 ? '#DC2626' : '#059669',
-                            fontWeight: '700',
-                          }}
-                        >
-                          {expiringCount > 0
-                            ? `⚠️ ${expiringCount} expiring soon`
-                            : 'All fresh'}
-                        </Text>
-                      </Text>
-                    </View>
                   </View>
 
-                  <Pressable
-                    style={styles.removeFriendBtn}
-                    hitSlop={8}
-                    onPress={() => handleConfirmRemoveFriend(friend)}
-                  >
-                    <Text style={styles.removeFriendBtnText}>✕</Text>
-                  </Pressable>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.friendName}>{friend.display_name}</Text>
+                    <Text style={styles.friendUsername}>@{friend.username}</Text>
+                    <Text style={styles.pendingNote}>Wants to share fridges with you</Text>
+                  </View>
                 </View>
 
-                {/* Expiring Items Quick Chips Preview */}
-                {expiringCount > 0 && (
-                  <View style={styles.expiringChipsRow}>
-                    <Text style={styles.expiringChipsLabel}>Expiring Soon:</Text>
-                    {expiringItems.slice(0, 3).map((item) => (
-                      <View key={item.id} style={styles.expiringChip}>
-                        <Text style={styles.expiringChipText}>
-                          ⚠️ {item.name}
-                        </Text>
-                      </View>
-                    ))}
-                    {expiringCount > 3 && (
-                      <Text style={styles.moreChipsText}>+{expiringCount - 3} more</Text>
-                    )}
-                  </View>
-                )}
+                {/* Accept & Decline Buttons */}
+                <View style={styles.pendingActionsRow}>
+                  <Pressable
+                    style={[styles.actionBtn, styles.acceptBtn]}
+                    onPress={() => acceptFriendRequest(friend.id)}
+                  >
+                    <Text style={styles.acceptBtnText}>✓ Accept</Text>
+                  </Pressable>
 
-                {/* Primary Action: View Shared Fridge */}
-                <Pressable
-                  style={styles.viewFridgeBtn}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/friend/[id]',
-                      params: { id: friend.id },
-                    })
-                  }
-                >
-                  <Text style={styles.viewFridgeBtnText}>
-                    👀 View {friend.display_name.split(' ')[0]}'s Shared Fridge ➔
-                  </Text>
-                </Pressable>
-              </View>
-            );
-          })
+                  <Pressable
+                    style={[styles.actionBtn, styles.declineBtn]}
+                    onPress={() => handleDeclineRequest(friend)}
+                  >
+                    <Text style={styles.declineBtnText}>✕ Decline</Text>
+                  </Pressable>
+                </View>
+              </StickerCard>
+            ))}
+          </View>
         )}
-      </View>
-    </ScrollView>
+
+        {/* ============================================================
+            3. BOTTOM: ACCEPTED FRIENDS LIST
+        ============================================================ */}
+        <View style={styles.sectionBlock}>
+          <Text style={styles.sectionHeading}>
+            Friends ({acceptedFriends.length})
+          </Text>
+
+          {acceptedFriends.length === 0 ? (
+            <StickerCard backgroundColor={Colors.paper} borderRadius={20} style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>No friends yet!</Text>
+              <Text style={styles.emptySubtext}>
+                Invite a friend at the top to view their shared fridge and plan feasts together!
+              </Text>
+            </StickerCard>
+          ) : (
+            <View style={styles.friendsList}>
+              {acceptedFriends.map((friend) => {
+                const friendItems = getFriendFridgeItems(friend.id);
+                const expiringCount = friendItems.filter((i) => {
+                  const hours = (new Date(i.expires_at).getTime() - Date.now()) / 36e5;
+                  return hours > 0 && hours <= 72;
+                }).length;
+
+                return (
+                  <StickerCard
+                    key={friend.id}
+                    backgroundColor={Colors.paper}
+                    borderRadius={20}
+                    style={styles.friendCard}
+                    onPress={() => handleFriendClick(friend)}
+                  >
+                    <View style={styles.friendRow}>
+                      {/* Avatar */}
+                      <View style={styles.avatarBox}>
+                        {friend.avatar_url ? (
+                          <Image source={{ uri: friend.avatar_url }} style={styles.avatarImg} />
+                        ) : (
+                          <View style={styles.avatarFallback}>
+                            <Text style={styles.avatarFallbackText}>
+                              {friend.display_name.charAt(0)}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Info */}
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.friendName}>{friend.display_name}</Text>
+                        <Text style={styles.friendUsername}>@{friend.username}</Text>
+                        <View style={styles.badgesRow}>
+                          <Text style={styles.itemCountText}>
+                            🧊 {friendItems.length} items logged
+                          </Text>
+                          {expiringCount > 0 && (
+                            <Text style={styles.expiringNoticeText}>
+                              ⚠️ {expiringCount} expiring soon
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+
+                      {/* View Fridge Indicator */}
+                      <View style={styles.viewFridgePill}>
+                        <Text style={styles.viewFridgeText}>View fridge ›</Text>
+                      </View>
+                    </View>
+                  </StickerCard>
+                );
+              })}
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: Colors.cream,
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: Colors.cream,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    backgroundColor: Colors.cream,
+    borderBottomWidth: 2,
+    borderBottomColor: Colors.ink,
+  },
+  headerTitle: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 26,
+    color: Colors.ink,
+  },
+  headerSubtitle: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 13,
+    color: '#7A685D',
+    marginTop: 2,
+  },
+  countBadge: {
+    backgroundColor: Colors.terracotta,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: Colors.ink,
+  },
+  countBadgeText: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 14,
+    color: '#FFF',
   },
   content: {
     padding: 16,
+    gap: 20,
+  },
+  inviteCard: {
+    padding: 18,
+  },
+  inviteHeading: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 18,
+    color: Colors.ink,
+  },
+  inviteSubtext: {
+    fontFamily: Fonts.bodyRegular,
+    fontSize: 13,
+    color: '#7A685D',
+    marginTop: 2,
+    marginBottom: 12,
+  },
+  inviteInputRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  inviteInput: {
+    flex: 1,
+    height: 48,
+    backgroundColor: Colors.cream,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: Colors.ink,
+    paddingHorizontal: 14,
+    fontFamily: Fonts.bodyRegular,
+    fontSize: 14,
+    color: Colors.ink,
+  },
+  inviteBtn: {
+    backgroundColor: Colors.terracotta,
+    paddingHorizontal: 16,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.ink,
+  },
+  inviteBtnDisabled: {
+    opacity: 0.6,
+  },
+  inviteBtnText: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 14,
+    color: '#FFF',
   },
   sectionBlock: {
-    marginBottom: 16,
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
+    gap: 10,
   },
   sectionHeading: {
+    fontFamily: Fonts.headingBold,
     fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
+    color: Colors.ink,
   },
-  sectionSubheading: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 2,
-    marginBottom: 10,
+  pendingCard: {
+    padding: 16,
+    borderWidth: 2,
+    borderColor: '#E6A23C',
   },
-  toggleAddBtn: {
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    marginLeft: 8,
-  },
-  toggleAddBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  dbStatusBanner: {
-    backgroundColor: '#DCFCE7',
-    borderWidth: 1,
-    borderColor: '#86EFAC',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    marginBottom: 12,
-    alignItems: 'center',
-  },
-  dbStatusBannerText: {
-    color: '#15803D',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  hardcodedWarningBanner: {
-    backgroundColor: '#FEF3C7',
-    borderWidth: 1,
-    borderColor: '#FCD34D',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 12,
-  },
-  hardcodedWarningTitle: {
-    color: '#B45309',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  hardcodedWarningSub: {
-    color: '#92400E',
-    fontSize: 11,
-    marginTop: 2,
-  },
-  addFriendBox: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 12,
-    marginBottom: 14,
-  },
-  addFriendBoxTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  addFriendInputRow: {
+  pendingCardHeader: {
     flexDirection: 'row',
-    gap: 6,
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
   },
-  addFriendInput: {
-    backgroundColor: '#F9FAFB',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    fontSize: 12,
-    color: '#111827',
+  avatarBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: Colors.ink,
+    overflow: 'hidden',
+    backgroundColor: '#FFE5DC',
   },
-  submitFriendBtn: {
-    backgroundColor: '#059669',
-    paddingHorizontal: 12,
-    borderRadius: 6,
+  avatarImg: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarFallback: {
+    width: '100%',
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  submitFriendBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 12,
+  avatarFallbackText: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 18,
+    color: Colors.terracotta,
   },
-  pendingSection: {
-    marginBottom: 14,
+  friendName: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 16,
+    color: Colors.ink,
   },
-  pendingSectionTitle: {
+  friendUsername: {
+    fontFamily: Fonts.bodySemiBold,
     fontSize: 13,
-    fontWeight: '700',
-    color: '#B45309',
-    marginBottom: 6,
+    color: '#7A685D',
   },
-  pendingFriendCard: {
-    backgroundColor: '#FFFBEB',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-    padding: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  pendingNoticeText: {
-    fontSize: 11,
-    color: '#92400E',
+  pendingNote: {
+    fontFamily: Fonts.bodyRegular,
+    fontSize: 12,
+    color: '#A66700',
     marginTop: 2,
   },
-  pendingActions: {
+  pendingActionsRow: {
     flexDirection: 'row',
+    gap: 10,
+  },
+  actionBtn: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 12,
     alignItems: 'center',
-    gap: 6,
+    borderWidth: 2,
+    borderColor: Colors.ink,
   },
-  acceptRequestBtn: {
-    backgroundColor: '#059669',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
+  acceptBtn: {
+    backgroundColor: '#72C08A',
   },
-  acceptRequestBtnText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  subSectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 8,
-  },
-  emptyFriendsBox: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 20,
-    alignItems: 'center',
-  },
-  emptyFriendsText: {
+  acceptBtnText: {
+    fontFamily: Fonts.headingBold,
     fontSize: 13,
-    color: '#6B7280',
+    color: Colors.ink,
+  },
+  declineBtn: {
+    backgroundColor: Colors.paper,
+  },
+  declineBtnText: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 13,
+    color: '#8A776A',
+  },
+  emptyCard: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  emptyTitle: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 16,
+    color: Colors.ink,
+    marginBottom: 4,
+  },
+  emptySubtext: {
+    fontFamily: Fonts.bodyRegular,
+    fontSize: 13,
+    color: '#7A685D',
     textAlign: 'center',
     lineHeight: 18,
   },
-  friendFridgeCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 12,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+  friendsList: {
+    gap: 12,
   },
-  friendHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+  friendCard: {
+    padding: 14,
   },
-  cardInfo: {
+  friendRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
+    gap: 12,
   },
-  avatarImage: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    marginRight: 10,
-  },
-  avatarPlaceholder: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#2563EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  avatarPlaceholderPending: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F59E0B',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  avatarText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  friendMeta: {
-    flex: 1,
-  },
-  friendName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  friendUsername: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  inventoryCount: {
-    fontSize: 11,
-    color: '#4B5563',
-    marginTop: 2,
-  },
-  removeFriendBtn: {
-    backgroundColor: '#FEE2E2',
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
-  },
-  removeFriendBtnText: {
-    color: '#DC2626',
-    fontWeight: 'bold',
-    fontSize: 11,
-  },
-  expiringChipsRow: {
+  badgesRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 10,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-  },
-  expiringChipsLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#991B1B',
-  },
-  expiringChip: {
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  expiringChipText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#B91C1C',
-  },
-  moreChipsText: {
-    fontSize: 11,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  viewFridgeBtn: {
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    borderRadius: 8,
-    paddingVertical: 8,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  viewFridgeBtnText: {
-    color: '#1D4ED8',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  initialLoadingContainer: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  initialLoadingTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-    marginTop: 14,
-  },
-  initialLoadingSub: {
-    fontSize: 13,
-    color: '#6B7280',
+    gap: 8,
     marginTop: 4,
-    textAlign: 'center',
+  },
+  itemCountText: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 12,
+    color: '#655142',
+  },
+  expiringNoticeText: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 12,
+    color: Colors.terracotta,
+  },
+  viewFridgePill: {
+    backgroundColor: '#EBF3E8',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: Colors.ink,
+  },
+  viewFridgeText: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 12,
+    color: '#2E5A36',
   },
 });

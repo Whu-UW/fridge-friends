@@ -35,15 +35,6 @@ interface ScanReceiptModalProps {
   onAddItems: (receipt: ScannedReceiptResult) => Promise<void>;
 }
 
-const CATEGORY_PRESETS = [
-  { name: 'Produce', label: 'Gradual', shelfLife: 7 },
-  { name: 'Dairy', label: 'Hard expiry', shelfLife: 10 },
-  { name: 'Meat', label: 'Hard expiry', shelfLife: 3 },
-  { name: 'Bakery', label: 'Gradual', shelfLife: 5 },
-  { name: 'Pantry', label: 'Shelf-stable', shelfLife: 365 },
-  { name: 'Beverage', label: 'Gradual', shelfLife: 14 },
-];
-
 export default function ScanReceiptModal({
   visible,
   imagePayload,
@@ -53,8 +44,10 @@ export default function ScanReceiptModal({
 }: ScanReceiptModalProps) {
   const [isScanning, setIsScanning] = useState(false);
   const [statusText, setStatusText] = useState('');
-  const [storeName, setStoreName] = useState('Grocery Store');
   const [tripDate, setTripDate] = useState(new Date().toISOString().slice(0, 10));
+  const [calendarTarget, setCalendarTarget] = useState<
+    { type: 'trip' } | { type: 'itemExpiry'; index: number } | null
+  >(null);
   const [isCalendarVisible, setIsCalendarVisible] = useState(false);
   const [scannedItems, setScannedItems] = useState<ScannedReceiptItem[]>([]);
   const [rawPrices, setRawPrices] = useState<Record<number, string>>({});
@@ -83,7 +76,8 @@ export default function ScanReceiptModal({
       setStatusText('');
       setScannedItems([]);
       setRawPrices({});
-      setStoreName('Grocery Store');
+      setCalendarTarget(null);
+      setIsCalendarVisible(false);
       setTripDate(new Date().toISOString().slice(0, 10));
     }
   }, [visible, imagePayload, initialSource]);
@@ -143,11 +137,21 @@ export default function ScanReceiptModal({
     setStatusText('Reading demo receipt...');
     try {
       const mock = await scanGroceryReceiptMock();
-      setStoreName(mock.storeName || 'Trader Joe’s');
-      setTripDate(mock.tripDate ? mock.tripDate.slice(0, 10) : new Date().toISOString().slice(0, 10));
-      setScannedItems(mock.items);
+      const tripIso = mock.tripDate ? mock.tripDate.slice(0, 10) : new Date().toISOString().slice(0, 10);
+      setTripDate(tripIso);
+      const itemsWithDates = mock.items.map((it) => {
+        const shelfDays = it.shelfLifeDays && it.shelfLifeDays > 0 ? it.shelfLifeDays : 7;
+        const boughtMs = new Date(tripIso).getTime();
+        const expIso = it.dateExpired || new Date(boughtMs + shelfDays * 864e5).toISOString().slice(0, 10);
+        return {
+          ...it,
+          shelfLifeDays: shelfDays,
+          dateExpired: expIso,
+        };
+      });
+      setScannedItems(itemsWithDates);
       const initialRaw: Record<number, string> = {};
-      mock.items.forEach((item, i) => {
+      itemsWithDates.forEach((item, i) => {
         initialRaw[i] = item.price > 0 ? item.price.toString() : '';
       });
       setRawPrices(initialRaw);
@@ -167,22 +171,42 @@ export default function ScanReceiptModal({
       } else {
         result = await scanGroceryReceiptMock();
       }
-      setStoreName(result.storeName || 'Grocery Store');
-      setTripDate(result.tripDate ? result.tripDate.slice(0, 10) : new Date().toISOString().slice(0, 10));
-      setScannedItems(result.items);
+      const tripIso = result.tripDate ? result.tripDate.slice(0, 10) : new Date().toISOString().slice(0, 10);
+      setTripDate(tripIso);
+      const itemsWithDates = result.items.map((it) => {
+        const shelfDays = it.shelfLifeDays && it.shelfLifeDays > 0 ? it.shelfLifeDays : 7;
+        const boughtMs = new Date(tripIso).getTime();
+        const expIso = it.dateExpired || new Date(boughtMs + shelfDays * 864e5).toISOString().slice(0, 10);
+        return {
+          ...it,
+          shelfLifeDays: shelfDays,
+          dateExpired: expIso,
+        };
+      });
+      setScannedItems(itemsWithDates);
       const initialRaw: Record<number, string> = {};
-      result.items.forEach((item, i) => {
+      itemsWithDates.forEach((item, i) => {
         initialRaw[i] = item.price > 0 ? item.price.toString() : '';
       });
       setRawPrices(initialRaw);
     } catch (err: any) {
       Alert.alert('Receipt Scan Notice', 'Gemini encountered a problem parsing the receipt. Loaded demo items to continue.');
       const mock = await scanGroceryReceiptMock();
-      setStoreName(mock.storeName || 'Grocery Store');
-      setTripDate(mock.tripDate ? mock.tripDate.slice(0, 10) : new Date().toISOString().slice(0, 10));
-      setScannedItems(mock.items);
+      const tripIso = mock.tripDate ? mock.tripDate.slice(0, 10) : new Date().toISOString().slice(0, 10);
+      setTripDate(tripIso);
+      const itemsWithDates = mock.items.map((it) => {
+        const shelfDays = it.shelfLifeDays && it.shelfLifeDays > 0 ? it.shelfLifeDays : 7;
+        const boughtMs = new Date(tripIso).getTime();
+        const expIso = it.dateExpired || new Date(boughtMs + shelfDays * 864e5).toISOString().slice(0, 10);
+        return {
+          ...it,
+          shelfLifeDays: shelfDays,
+          dateExpired: expIso,
+        };
+      });
+      setScannedItems(itemsWithDates);
       const initialRaw: Record<number, string> = {};
-      mock.items.forEach((item, i) => {
+      itemsWithDates.forEach((item, i) => {
         initialRaw[i] = item.price > 0 ? item.price.toString() : '';
       });
       setRawPrices(initialRaw);
@@ -217,18 +241,16 @@ export default function ScanReceiptModal({
     });
   };
 
-  const handleCycleCategory = (index: number) => {
+  const handleUpdateItemExpiry = (index: number, newDate: string) => {
     setScannedItems((prev) => {
       const updated = [...prev];
-      const current = updated[index].category?.toLowerCase() || '';
-      let currIdx = CATEGORY_PRESETS.findIndex((c) => current.includes(c.name.toLowerCase()));
-      if (currIdx === -1) currIdx = 0;
-      const nextPreset = CATEGORY_PRESETS[(currIdx + 1) % CATEGORY_PRESETS.length];
-
+      const boughtMs = new Date(tripDate).getTime();
+      const expMs = new Date(newDate).getTime();
+      const diffDays = Math.max(1, Math.round((expMs - boughtMs) / 864e5));
       updated[index] = {
         ...updated[index],
-        category: nextPreset.name,
-        shelfLifeDays: nextPreset.shelfLife,
+        dateExpired: newDate,
+        shelfLifeDays: diffDays,
       };
       return updated;
     });
@@ -254,6 +276,8 @@ export default function ScanReceiptModal({
 
   const handleAddNewItem = () => {
     const nextIdx = scannedItems.length;
+    const boughtMs = new Date(tripDate).getTime();
+    const defaultExp = new Date(boughtMs + 7 * 864e5).toISOString().slice(0, 10);
     setScannedItems((prev) => [
       ...prev,
       {
@@ -261,6 +285,7 @@ export default function ScanReceiptModal({
         price: 0,
         category: 'Produce',
         shelfLifeDays: 7,
+        dateExpired: defaultExp,
       },
     ]);
     setRawPrices((prev) => ({ ...prev, [nextIdx]: '' }));
@@ -269,6 +294,8 @@ export default function ScanReceiptModal({
   const handleClose = () => {
     setScannedItems([]);
     setRawPrices({});
+    setCalendarTarget(null);
+    setIsCalendarVisible(false);
     setStatusText('');
     onClose();
   };
@@ -287,17 +314,24 @@ export default function ScanReceiptModal({
       return;
     }
 
+    const boughtMs = new Date(tripDate).getTime();
     const cleanedItems = scannedItems
       .filter((item) => item.name.trim().length > 0)
       .map((item, idx) => {
         const raw = rawPrices[idx];
         const parsed = raw !== undefined && raw !== '' ? parseFloat(raw) : item.price;
+        const lookup = lookupFoodCharacter(item.name.trim());
+        const expDate = item.dateExpired || new Date(boughtMs + (item.shelfLifeDays || 7) * 864e5).toISOString().slice(0, 10);
+        const expMs = new Date(expDate).getTime();
+        const shelfLifeDays = Math.max(1, Math.round((expMs - boughtMs) / 864e5));
+
         return {
           ...item,
           name: item.name.trim(),
-          price: typeof parsed === 'number' && !isNaN(parsed) && parsed >= 0 ? parsed : (item.price >= 0 ? item.price : 0),
-          category: item.category || 'Produce',
-          shelfLifeDays: item.shelfLifeDays || 7,
+          price: typeof parsed === 'number' && !isNaN(parsed) && parsed >= 0 ? parsed : 0,
+          category: lookup.category || item.category || 'Produce',
+          shelfLifeDays,
+          dateExpired: expDate,
         };
       });
 
@@ -309,7 +343,7 @@ export default function ScanReceiptModal({
     setIsSubmitting(true);
     try {
       const receiptResult: ScannedReceiptResult = {
-        storeName: storeName.trim() || 'Grocery Store',
+        storeName: 'Grocery Store',
         tripDate: new Date(tripDate).toISOString(),
         totalCost: calculatedTotal,
         items: cleanedItems,
@@ -405,31 +439,19 @@ export default function ScanReceiptModal({
                 </View>
               </View>
 
-              {/* Editable Store Name & Date Card */}
+              {/* Date bought card (Store removed) */}
               <StickerCard backgroundColor={Colors.paper} borderRadius={18} style={styles.metaCard}>
-                <View style={styles.metaField}>
-                  <Text style={styles.metaLabel}>Store</Text>
-                  <TextInput
-                    style={styles.metaInput}
-                    value={storeName}
-                    onChangeText={setStoreName}
-                    placeholder="Store name"
-                    placeholderTextColor={Colors.placeholder}
-                  />
-                </View>
-
-                <View style={styles.metaDivider} />
-
-                <View style={styles.metaField}>
-                  <Text style={styles.metaLabel}>Date bought</Text>
-                  <Pressable
-                    style={styles.datePickerBtn}
-                    onPress={() => setIsCalendarVisible(true)}
-                  >
-                    <Text style={styles.datePickerText}>{formatDisplayDate(tripDate)}</Text>
-                    <Text style={{ fontSize: 16 }}>📅</Text>
-                  </Pressable>
-                </View>
+                <Text style={styles.metaLabel}>Date bought</Text>
+                <Pressable
+                  style={styles.datePickerBtn}
+                  onPress={() => {
+                    setCalendarTarget({ type: 'trip' });
+                    setIsCalendarVisible(true);
+                  }}
+                >
+                  <Text style={styles.datePickerText}>{formatDisplayDate(tripDate)}</Text>
+                  <Text style={{ fontSize: 16 }}>📅</Text>
+                </Pressable>
               </StickerCard>
 
               {/* Editable Scanned Items List */}
@@ -486,17 +508,26 @@ export default function ScanReceiptModal({
                         </Pressable>
                       </View>
 
-                      {/* Interactive Category & Shelf Life Toggle */}
-                      <View style={styles.itemCardBottom}>
+                      {/* Date expired field (Categories removed) */}
+                      <View style={styles.itemExpiryRow}>
+                        <Text style={styles.itemExpiryLabel}>Date expired</Text>
                         <Pressable
-                          style={styles.categoryChip}
-                          onPress={() => handleCycleCategory(idx)}
+                          style={styles.itemExpiryBtn}
+                          onPress={() => {
+                            setCalendarTarget({ type: 'itemExpiry', index: idx });
+                            setIsCalendarVisible(true);
+                          }}
                         >
-                          <Text style={styles.categoryChipLabel}>
-                            🏷️ {item.category || 'Produce'} · ~{item.shelfLifeDays || 7} days ▾
+                          <Text
+                            style={[
+                              styles.itemExpiryText,
+                              !item.dateExpired && styles.placeholderText,
+                            ]}
+                          >
+                            {item.dateExpired ? formatDisplayDate(item.dateExpired) : 'Select date'}
                           </Text>
+                          <Text style={styles.calendarIconSmall}>📅</Text>
                         </Pressable>
-                        <Text style={styles.tapToChangeHint}>Tap to change</Text>
                       </View>
                     </StickerCard>
                   );
@@ -536,14 +567,28 @@ export default function ScanReceiptModal({
         )}
 
         {/* Date picker modal for receipt purchase date */}
+        {/* Date picker modal for receipt purchase date or item expiration */}
         <CalendarPickerModal
           visible={isCalendarVisible}
-          selectedDate={tripDate}
+          selectedDate={
+            calendarTarget?.type === 'trip'
+              ? tripDate
+              : (calendarTarget?.type === 'itemExpiry' && scannedItems[calendarTarget.index]?.dateExpired)
+                || tripDate
+          }
           onSelectDate={(date) => {
-            setTripDate(date);
+            if (calendarTarget?.type === 'trip') {
+              setTripDate(date);
+            } else if (calendarTarget?.type === 'itemExpiry') {
+              handleUpdateItemExpiry(calendarTarget.index, date);
+            }
             setIsCalendarVisible(false);
+            setCalendarTarget(null);
           }}
-          onClose={() => setIsCalendarVisible(false)}
+          onClose={() => {
+            setIsCalendarVisible(false);
+            setCalendarTarget(null);
+          }}
         />
       </KeyboardAvoidingView>
     </Modal>
@@ -690,40 +735,32 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   metaCard: {
-    padding: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 14,
   },
-  metaField: {
-    flex: 1,
-  },
   metaLabel: {
-    fontFamily: Fonts.bodySemiBold,
-    fontSize: 11,
-    color: '#76665A',
-    marginBottom: 2,
-  },
-  metaInput: {
-    fontFamily: Fonts.headingBold,
+    fontFamily: Fonts.headingSemiBold,
     fontSize: 15,
     color: Colors.ink,
-    paddingVertical: 2,
-  },
-  metaDivider: {
-    width: 1.5,
-    height: 30,
-    backgroundColor: '#E5D6C5',
-    marginHorizontal: 12,
   },
   datePickerBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 8,
+    backgroundColor: '#FBF8F1',
+    borderWidth: 1.5,
+    borderColor: Colors.ink,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   datePickerText: {
-    fontFamily: Fonts.headingBold,
-    fontSize: 15,
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 14,
     color: Colors.ink,
   },
   itemsListContainer: {
@@ -792,31 +829,41 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.terracotta,
   },
-  itemCardBottom: {
+  itemExpiryRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 4,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#F0E6D8',
   },
-  categoryChip: {
-    backgroundColor: Colors.fresh.bg,
+  itemExpiryLabel: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 13,
+    color: Colors.ink,
+  },
+  itemExpiryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FBF8F1',
     borderWidth: 1.5,
     borderColor: Colors.ink,
-    borderRadius: 14,
+    borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
-  categoryChipLabel: {
-    fontFamily: Fonts.headingSemiBold,
-    fontSize: 12,
-    color: Colors.fresh.text,
+  itemExpiryText: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 13,
+    color: Colors.ink,
   },
-  tapToChangeHint: {
+  calendarIconSmall: {
+    fontSize: 13,
+  },
+  placeholderText: {
+    color: Colors.placeholder,
     fontFamily: Fonts.bodyRegular,
-    fontSize: 11,
-    color: '#8A776A',
   },
   addItemBtn: {
     marginTop: 12,

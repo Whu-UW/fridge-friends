@@ -759,7 +759,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setBackendError(null);
 
       // 1. Fetch available users from live database
-      const users = await backendApi.getUsers(20);
+      const users = await backendApi.getUsers(50);
       const wantedId = targetUserId || activeBackendUserId;
       if (wantedId && !users.some((u) => u.id === wantedId)) {
         try {
@@ -1137,7 +1137,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const matchingBackendUser = availableBackendUsers.find(
       (u) =>
         (u.username || '').toLowerCase().includes(cleanUsername) ||
-        u.name.toLowerCase().includes(cleanUsername)
+        (u.email || '').toLowerCase().includes(cleanUsername) ||
+        (u.name || '').toLowerCase().includes(cleanUsername)
     );
     if (matchingBackendUser && backendConnected) {
       backendApi

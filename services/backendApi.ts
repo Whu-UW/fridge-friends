@@ -12,8 +12,10 @@ import {
 } from './supabase/types';
 import type { FriendEntry, FeastInvite, FeastFriendStatus } from '../context/AppContext';
 
-export const BACKEND_BASE_URL =
+const rawBackendUrl =
   process.env.EXPO_PUBLIC_BACKEND_URL || 'https://fridge-friends-be-144bbbd9.fastapicloud.dev';
+
+export const BACKEND_BASE_URL = rawBackendUrl.replace(/\/+$/, '');
 
 /* ============================================================================
  * Backend Types (from OpenAPI 3.1.0 specification)
@@ -23,7 +25,7 @@ export type BackendBuddy = 'sammy' | 'milo' | 'eddie' | 'carl' | 'bella';
 
 export interface BackendUser {
   id: number;
-  username: string;
+  username?: string | null;
   email: string | null;
   name: string;
   buddy?: BackendBuddy;
@@ -212,25 +214,28 @@ export function getUserAvatar(userId: number, name: string): string {
 }
 
 export function toFrontendProfile(user: BackendUser): ProfileRow {
+  const name = user.name || 'User';
   return {
     id: String(user.id),
     email: user.email ?? '',
     username: user.username || `user_${user.id}`,
-    display_name: user.name,
-    avatar_url: getUserAvatar(user.id, user.name),
+    display_name: name,
+    avatar_url: getUserAvatar(user.id, name),
     created_at: user.created_at,
   };
 }
 
 export function toFrontendFriend(backendFriend: BackendFriend): FriendEntry {
   const friendUser = backendFriend.friend;
+  const friendId = friendUser?.id || backendFriend.friend_id;
+  const friendName = friendUser?.name || 'Friend';
   return {
-    id: String(friendUser.id),
-    email: friendUser.email ?? '',
-    username: friendUser.username || `user_${friendUser.id}`,
-    display_name: friendUser.name,
-    avatar_url: getUserAvatar(friendUser.id, friendUser.name),
-    created_at: friendUser.created_at,
+    id: String(friendId),
+    email: friendUser?.email ?? '',
+    username: friendUser?.username || `user_${friendId}`,
+    display_name: friendName,
+    avatar_url: getUserAvatar(friendId, friendName),
+    created_at: friendUser?.created_at || backendFriend.created_at,
     status: backendFriend.status === 'accepted' ? 'accepted' : 'pending',
   };
 }
@@ -670,7 +675,7 @@ export const backendApi = {
    */
   async updateUser(
     userId: number,
-    updates: { name?: string; email?: string; username?: string; buddy?: string }
+    updates: { name?: string; email?: string; username?: string; buddy?: BackendBuddy }
   ): Promise<BackendUser> {
     return request<BackendUser>(`/users/${userId}`, {
       method: 'PATCH',

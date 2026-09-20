@@ -9,9 +9,9 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp } from '../../context/AppContext';
+import { useApp, FeastInvite } from '../../context/AppContext';
 import { Colors, Fonts } from '../../constants/Theme';
 import StickerCard from '../../components/ui/StickerCard';
 import StickerButton from '../../components/ui/StickerButton';
@@ -25,6 +25,7 @@ import {
 } from '../../services/foodCharacterLookup';
 
 type FeastStep = 'pick_friends' | 'pick_recipe' | 'waiting' | 'live';
+export type FriendRsvpStatus = 'can_go' | 'cannot_go' | 'pending';
 
 interface ChatMessage {
   id: string;
@@ -34,18 +35,35 @@ interface ChatMessage {
   isSelf: boolean;
 }
 
+const DATE_TIME_PRESETS = [
+  'Tonight at 6:30 PM',
+  'Tomorrow at 7:00 PM',
+  'Friday at 6:30 PM',
+  'Saturday at 1:00 PM',
+];
+
 export default function FeastsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { itemIds } = useLocalSearchParams<{ itemIds?: string }>();
   const {
     currentUser,
     friends,
     fridgeItems,
     backendSyncAttempted,
+    getFriendFridgeItems,
+    addCustomFeast,
   } = useApp();
 
   // Active step in Feast mode
   const [currentStep, setCurrentStep] = useState<FeastStep>('pick_friends');
+
+  // When navigated with itemIds, start at pick_friends
+  React.useEffect(() => {
+    if (itemIds) {
+      setCurrentStep('pick_friends');
+    }
+  }, [itemIds]);
 
   // Step 1: Selected friends
   const mutualFriends = useMemo(() => {
@@ -61,16 +79,71 @@ export default function FeastsScreen() {
     }
   }, [mutualFriends]);
 
-  // User's at-risk items
+  // Top 3 ingredients for each friend
+  const getFriendTopIngredients = (friend: (typeof mutualFriends)[0], idx: number): string[] => {
+    const items = getFriendFridgeItems(friend.id);
+    if (items && items.length > 0) {
+      return items.slice(0, 3).map((i) => i.name);
+    }
+    const fallbacks = [
+      ['Bell peppers', 'Heavy cream', 'Rosemary'],
+      ['Fresh basil', 'Feta cheese', 'Cherry tomatoes'],
+      ['Mushrooms', 'Corn tortillas', 'Avocado'],
+      ['Garlic cloves', 'Parmesan', 'Baby spinach'],
+    ];
+    return fallbacks[idx % fallbacks.length];
+  };
+
+  // User's foods to rescue (from itemIds or at-risk)
   const userAtRiskFoods = useMemo(() => {
-    return fridgeItems
-      .filter((i) => i.user_id === currentUser.id)
+    const userItems = fridgeItems.filter((i) => i.user_id === currentUser.id);
+    if (itemIds && itemIds.trim().length > 0) {
+      const ids = itemIds.split(',').filter(Boolean);
+      const matched = userItems.filter((i) => ids.includes(i.id));
+      if (matched.length > 0) {
+        return matched.map((i) => i.name);
+      }
+    }
+    return userItems
       .filter((i) => getStatusUrgency(getDaysLeft(i.expires_at)).needsRescue)
       .map((i) => i.name);
-  }, [fridgeItems, currentUser.id]);
+  }, [fridgeItems, currentUser.id, itemIds]);
 
-  // Step 2: Recipe options
+  // Step 2: Recipe options & Schedule
   const [selectedRecipeIndex, setSelectedRecipeIndex] = useState(0);
+  const [scheduledDateTime, setScheduledDateTime] = useState('Tonight at 6:30 PM');
+
+  // Step 3: Waiting lobby RSVPs & Nudge confirmation
+  const [friendRsvps, setFriendRsvps] = useState<Record<string, FriendRsvpStatus>>({});
+  const [nudgeConfirmation, setNudgeConfirmation] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    setFriendRsvps((prev) => {
+      const next = { ...prev };
+      selectedFriendIds.forEach((id, idx) => {
+        if (!next[id]) {
+          next[id] = idx === 0 ? 'can_go' : 'pending';
+        }
+      });
+      return next;
+    });
+  }, [selectedFriendIds]);
+
+  const handleSetFriendRsvp = (friendId: string, status: FriendRsvpStatus) => {
+    setFriendRsvps((prev) => ({
+      ...prev,
+      [friendId]: status,
+    }));
+  };
+
+  const handleNudgeFriend = (name: string) => {
+    const msg = `Confirmation: Nudge reminder sent to ${name}!`;
+    setNudgeConfirmation(msg);
+    Alert.alert('Nudge Sent! 🔔', msg);
+    setTimeout(() => {
+      setNudgeConfirmation(null);
+    }, 4000);
+  };
 
   const feastRecipes = useMemo(() => {
     return [
@@ -127,13 +200,7 @@ export default function FeastsScreen() {
 
   const activeRecipe = feastRecipes[selectedRecipeIndex];
 
-  // Step 3: Waiting lobby RSVPs
-  const [friendRsvps, setFriendRsvps] = useState<Record<string, 'Accepted' | 'Pending'>>({
-    'friend-1': 'Accepted',
-    'friend-2': 'Accepted',
-  });
-
-  const allAccepted = Object.values(friendRsvps).every((s) => s === 'Accepted');
+  const allAccepted = Object.values(friendRsvps).every((s) => s === 'can_go');
 
   // Step 4: Live Chat
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
@@ -185,8 +252,51 @@ export default function FeastsScreen() {
     );
   };
 
-  const handleNudgeFriend = (name: string) => {
-    Alert.alert('Nudge Sent! 🔔', `Sent a reminder nudge to ${name}.`);
+  const handleSendInvite = () => {
+    const invitedFriendsList = mutualFriends
+      .filter((f) => selectedFriendIds.includes(f.id))
+      .map((f, idx) => ({
+        id: f.id,
+        name: f.display_name,
+        username: f.username,
+        avatarUrl: f.avatar_url || '',
+        status: (idx === 0 ? 'accepted' : 'pending') as 'accepted' | 'pending',
+      }));
+
+    const newFeast: FeastInvite = {
+      id: `feast-${Date.now()}`,
+      partyName: `${currentUser.display_name.split(' ')[0]}'s Feast Mode`,
+      hostId: currentUser.id,
+      hostName: currentUser.display_name,
+      candidateRecipes: [],
+      recipeId: activeRecipe.id,
+      recipeTitle: activeRecipe.title,
+      cookTime: activeRecipe.cookTime,
+      foodRescuedGrams: 800,
+      dollarsSaved: 16.5,
+      invitedFriends: invitedFriendsList,
+      status: 'pending',
+      userRsvpStatus: 'host',
+      scheduledFor: scheduledDateTime,
+      bringBreakdown: activeRecipe.bringList,
+      cookingTasks: activeRecipe.steps.map((step, idx) => ({
+        step_number: idx + 1,
+        instruction: step,
+      })),
+      createdAt: new Date().toISOString(),
+    };
+
+    addCustomFeast(newFeast);
+    Alert.alert(
+      'Invites Sent! ✉️',
+      `Sent feast invites for "${activeRecipe.title}" (${scheduledDateTime})! You can track RSVPs in Meals.`,
+      [
+        {
+          text: 'Go to Meals 🍳',
+          onPress: () => router.push('/(tabs)/meals'),
+        },
+      ]
+    );
   };
 
   if (!backendSyncAttempted) {
@@ -277,14 +387,7 @@ export default function FeastsScreen() {
               {mutualFriends.map((friend, idx) => {
                 const isSelected = selectedFriendIds.includes(friend.id);
                 const initial = friend.display_name.charAt(0).toUpperCase();
-
-                // Placeholder at-risk items for friends
-                const friendAtRisk =
-                  idx === 0
-                    ? ['Bell peppers', 'Cream']
-                    : idx === 1
-                    ? ['Basil', 'Feta']
-                    : ['Mushrooms', 'Tortillas'];
+                const friendTop3 = getFriendTopIngredients(friend, idx);
 
                 return (
                   <StickerCard
@@ -300,11 +403,12 @@ export default function FeastsScreen() {
                         <Text style={styles.avatarInitialText}>{initial}</Text>
                       </View>
 
-                      {/* Name and urgent food pills */}
+                      {/* Name and top 3 ingredients */}
                       <View style={{ flex: 1 }}>
                         <Text style={styles.friendName}>{friend.display_name.split(' ')[0]}</Text>
+                        <Text style={styles.topIngredientsLabel}>Top 3 ingredients:</Text>
                         <View style={styles.friendItemsRow}>
-                          {friendAtRisk.map((item, fIdx) => (
+                          {friendTop3.map((item, fIdx) => (
                             <View key={fIdx} style={styles.friendItemPill}>
                               <Text style={styles.friendItemPillText}>{item}</Text>
                             </View>
@@ -330,7 +434,7 @@ export default function FeastsScreen() {
             {/* Bottom Button: See recipes */}
             <View style={styles.ctaBottomWrap}>
               <StickerButton
-                title={`See recipes for ${selectedFriendIds.length + 1} people`}
+                title={`Select recipe & schedule (${selectedFriendIds.length} friends)`}
                 onPress={() => setCurrentStep('pick_recipe')}
                 disabled={selectedFriendIds.length === 0}
                 variant="primary"
@@ -341,7 +445,7 @@ export default function FeastsScreen() {
         )}
 
         {/* ============================================================
-            STEP 2: Pick a Recipe (Screen 13)
+            STEP 2: Pick a Recipe & Schedule (Screen 13)
         ============================================================ */}
         {currentStep === 'pick_recipe' && (
           <View style={styles.stepBlock}>
@@ -415,11 +519,49 @@ export default function FeastsScreen() {
               })}
             </View>
 
-            {/* Bottom Button: Nudge Friends */}
+            {/* Schedule Feast: Date & Time Picker */}
+            <View style={styles.scheduleCardWrap}>
+              <StickerCard backgroundColor={Colors.paper} borderRadius={22} style={styles.scheduleCard}>
+                <Text style={styles.scheduleHeading}>Select feast date & time 📅</Text>
+                <View style={styles.dateTimePresetsRow}>
+                  {DATE_TIME_PRESETS.map((preset) => {
+                    const isPicked = scheduledDateTime === preset;
+                    return (
+                      <Pressable
+                        key={preset}
+                        style={[
+                          styles.dateTimePresetPill,
+                          isPicked && styles.dateTimePresetPillActive,
+                        ]}
+                        onPress={() => setScheduledDateTime(preset)}
+                      >
+                        <Text
+                          style={[
+                            styles.dateTimePresetText,
+                            isPicked && styles.dateTimePresetTextActive,
+                          ]}
+                        >
+                          {preset}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <TextInput
+                  style={styles.customDateTimeInput}
+                  value={scheduledDateTime}
+                  onChangeText={setScheduledDateTime}
+                  placeholder="Or custom date/time (e.g. Saturday 7:00 PM)"
+                  placeholderTextColor="#8A776A"
+                />
+              </StickerCard>
+            </View>
+
+            {/* Bottom Button: Send out invite */}
             <View style={styles.ctaBottomWrap}>
               <StickerButton
-                title={`Nudge ${mutualFriends[0]?.display_name.split(' ')[0] || 'Maya'} and ${mutualFriends[1]?.display_name.split(' ')[0] || 'Jae'}`}
-                onPress={() => setCurrentStep('waiting')}
+                title="Send out invite to friends ✉️"
+                onPress={handleSendInvite}
                 variant="primary"
                 size="large"
               />
@@ -433,6 +575,7 @@ export default function FeastsScreen() {
         {currentStep === 'waiting' && (
           <View style={styles.stepBlock}>
             {/* Header */}
+            {/* Header */}
             <View style={styles.headerRow}>
               <Pressable onPress={() => setCurrentStep('pick_recipe')} hitSlop={10} style={styles.backBtn}>
                 <Text style={styles.backBtnArrow}>‹</Text>
@@ -440,10 +583,17 @@ export default function FeastsScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.headerTitle}>Waiting for friends</Text>
                 <Text style={styles.headerSubtitle}>
-                  {activeRecipe.title} · {activeRecipe.cookTime}
+                  {activeRecipe.title} · {scheduledDateTime}
                 </Text>
               </View>
             </View>
+
+            {/* Nudge Confirmation Message Banner */}
+            {nudgeConfirmation && (
+              <View style={styles.nudgeConfirmationBanner}>
+                <Text style={styles.nudgeConfirmationText}>✓ {nudgeConfirmation}</Text>
+              </View>
+            )}
 
             {/* RSVP Cards List */}
             <StickerCard backgroundColor={Colors.paper} borderRadius={22} style={styles.lobbyCard}>
@@ -454,66 +604,144 @@ export default function FeastsScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.lobbyName}>You</Text>
-                  <Text style={styles.lobbySub}>Host</Text>
+                  <Text style={styles.lobbySub}>Host · Scheduled for {scheduledDateTime}</Text>
                 </View>
-                <View style={[styles.rsvpBadge, styles.rsvpReady]}>
-                  <Text style={[styles.rsvpBadgeText, { color: Colors.fresh.text }]}>Ready</Text>
-                </View>
-              </View>
-
-              {/* Friend 1: Maya */}
-              <View style={[styles.lobbyRow, styles.lobbyRowBorder]}>
-                <View style={styles.avatarInitialCircle}>
-                  <Text style={styles.avatarInitialText}>M</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.lobbyName}>{mutualFriends[0]?.display_name.split(' ')[0] || 'Maya'}</Text>
-                  <Text style={styles.lobbySub}>Bringing bell peppers</Text>
-                </View>
-                <View style={[styles.rsvpBadge, styles.rsvpAccepted]}>
-                  <Text style={[styles.rsvpBadgeText, { color: Colors.fresh.text }]}>Accepted</Text>
+                <View style={[styles.rsvpBadge, styles.rsvpCanGo]}>
+                  <Text style={[styles.rsvpBadgeText, { color: '#2E7D32' }]}>✓ Ready</Text>
                 </View>
               </View>
 
-              {/* Friend 2: Jae */}
-              <View style={[styles.lobbyRow, styles.lobbyRowBorder]}>
-                <View style={styles.avatarInitialCircle}>
-                  <Text style={styles.avatarInitialText}>J</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.lobbyName}>{mutualFriends[1]?.display_name.split(' ')[0] || 'Jae'}</Text>
-                  <Text style={styles.lobbySub}>Nudged 5 minutes ago</Text>
-                </View>
-                <View style={[styles.rsvpBadge, styles.rsvpPending]}>
-                  <Text style={[styles.rsvpBadgeText, { color: Colors.soon.text }]}>Pending</Text>
-                </View>
-              </View>
+              {/* Invited Friends RSVPs */}
+              {(selectedFriendIds.length > 0
+                ? mutualFriends.filter((f) => selectedFriendIds.includes(f.id))
+                : mutualFriends.slice(0, 2)
+              ).map((friend) => {
+                const rsvp = friendRsvps[friend.id] || 'pending';
+                const isCanGo = rsvp === 'can_go';
+                const isCannotGo = rsvp === 'cannot_go';
+                const friendName = friend.display_name.split(' ')[0];
+
+                return (
+                  <View key={friend.id} style={[styles.lobbyRow, styles.lobbyRowBorder]}>
+                    <View style={styles.avatarInitialCircle}>
+                      <Text style={styles.avatarInitialText}>
+                        {friend.display_name.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.lobbyName}>{friendName}</Text>
+                      <Text style={styles.lobbySub}>
+                        {isCanGo
+                          ? 'Notified: Can go! Bringing ingredients.'
+                          : isCannotGo
+                          ? 'Notified: Cannot go this time.'
+                          : 'Notified: Invite sent, awaiting response.'}
+                      </Text>
+
+                      {/* Interactive Simulation Controls */}
+                      <View style={styles.rsvpSimRow}>
+                        <Text style={styles.simLabel}>Simulate:</Text>
+                        <Pressable
+                          style={[styles.simBtn, isCanGo && styles.simBtnActiveCanGo]}
+                          onPress={() => handleSetFriendRsvp(friend.id, 'can_go')}
+                        >
+                          <Text style={[styles.simBtnText, isCanGo && styles.simBtnTextActive]}>
+                            Can go
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          style={[styles.simBtn, isCannotGo && styles.simBtnActiveCannotGo]}
+                          onPress={() => handleSetFriendRsvp(friend.id, 'cannot_go')}
+                        >
+                          <Text style={[styles.simBtnText, isCannotGo && styles.simBtnTextActive]}>
+                            Cannot go
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+
+                    {/* Status Badge & Nudge Button */}
+                    <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                      <View
+                        style={[
+                          styles.rsvpBadge,
+                          isCanGo
+                            ? styles.rsvpCanGo
+                            : isCannotGo
+                            ? styles.rsvpCannotGo
+                            : styles.rsvpPending,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.rsvpBadgeText,
+                            {
+                              color: isCanGo
+                                ? '#2E7D32'
+                                : isCannotGo
+                                ? '#C62828'
+                                : Colors.soon.text,
+                            },
+                          ]}
+                        >
+                          {isCanGo ? '✓ Can go' : isCannotGo ? '✕ Cannot go' : '⏳ Pending'}
+                        </Text>
+                      </View>
+
+                      <Pressable
+                        style={styles.nudgePillBtn}
+                        onPress={() => handleNudgeFriend(friendName)}
+                      >
+                        <Text style={styles.nudgePillBtnText}>Nudge 🔔</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                );
+              })}
             </StickerCard>
 
             {/* Progress Capsule Bars */}
             <View style={styles.progressWrap}>
               <View style={styles.progressHeaderRow}>
-                <Text style={styles.progressTextLeft}>2 of 3 are in</Text>
-                <Text style={styles.progressTextRight}>Everyone needs to accept</Text>
+                <Text style={styles.progressTextLeft}>
+                  {Object.values(friendRsvps).filter((s) => s === 'can_go').length + 1} of{' '}
+                  {selectedFriendIds.length + 1} can go
+                </Text>
+                <Text style={styles.progressTextRight}>
+                  {Object.values(friendRsvps).some((s) => s === 'pending')
+                    ? 'Waiting for responses'
+                    : 'Responses collected!'}
+                </Text>
               </View>
               <View style={styles.capsuleBarsRow}>
                 <View style={[styles.capsuleBar, styles.capsuleBarFilled]} />
-                <View style={[styles.capsuleBar, styles.capsuleBarFilled]} />
-                <View style={styles.capsuleBar} />
+                {selectedFriendIds.map((id) => {
+                  const status = friendRsvps[id];
+                  return (
+                    <View
+                      key={id}
+                      style={[
+                        styles.capsuleBar,
+                        status === 'can_go' && styles.capsuleBarFilled,
+                        status === 'cannot_go' && styles.capsuleBarDeclined,
+                      ]}
+                    />
+                  );
+                })}
               </View>
             </View>
 
             {/* Action Buttons */}
             <View style={styles.waitingButtonsStack}>
               <StickerButton
-                title={`Nudge ${mutualFriends[1]?.display_name.split(' ')[0] || 'Jae'} again`}
-                onPress={() => handleNudgeFriend(mutualFriends[1]?.display_name.split(' ')[0] || 'Jae')}
+                title="Send reminder nudge to pending friends 🔔"
+                onPress={() => handleNudgeFriend('friends')}
                 variant="secondary"
                 size="large"
               />
 
               <StickerButton
-                title="Start feast"
+                title="Start feast 🍳"
                 onPress={() => setCurrentStep('live')}
                 variant="primary"
                 size="large"
@@ -794,6 +1022,12 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.headingBold,
     fontSize: 17,
     color: Colors.ink,
+    marginBottom: 2,
+  },
+  topIngredientsLabel: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 11,
+    color: '#8A776A',
     marginBottom: 4,
   },
   friendItemsRow: {
@@ -813,6 +1047,117 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.headingMedium,
     fontSize: 12,
     color: Colors.ink,
+  },
+  scheduleCardWrap: {
+    marginTop: 4,
+  },
+  scheduleCard: {
+    padding: 16,
+    gap: 10,
+  },
+  scheduleHeading: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 16,
+    color: Colors.ink,
+  },
+  dateTimePresetsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  dateTimePresetPill: {
+    backgroundColor: Colors.cream,
+    borderWidth: 1.5,
+    borderColor: Colors.ink,
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  dateTimePresetPillActive: {
+    backgroundColor: Colors.terracotta,
+    borderColor: Colors.ink,
+  },
+  dateTimePresetText: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 12,
+    color: Colors.ink,
+  },
+  dateTimePresetTextActive: {
+    color: '#FFF',
+  },
+  customDateTimeInput: {
+    backgroundColor: Colors.cream,
+    borderWidth: 1.5,
+    borderColor: Colors.ink,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 13,
+    color: Colors.ink,
+  },
+  nudgeConfirmationBanner: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#2E7D32',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+  },
+  nudgeConfirmationText: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 13,
+    color: '#2E7D32',
+    textAlign: 'center',
+  },
+  rsvpSimRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+  },
+  simLabel: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 11,
+    color: '#8A776A',
+  },
+  simBtn: {
+    backgroundColor: Colors.paper,
+    borderWidth: 1,
+    borderColor: Colors.ink,
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  simBtnActiveCanGo: {
+    backgroundColor: '#E8F5E9',
+    borderColor: '#2E7D32',
+  },
+  simBtnActiveCannotGo: {
+    backgroundColor: '#FFEBEE',
+    borderColor: '#C62828',
+  },
+  simBtnText: {
+    fontFamily: Fonts.bodyBold,
+    fontSize: 11,
+    color: Colors.ink,
+  },
+  simBtnTextActive: {
+    fontWeight: 'bold',
+  },
+  nudgePillBtn: {
+    backgroundColor: Colors.paper,
+    borderWidth: 1.5,
+    borderColor: Colors.ink,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  nudgePillBtnText: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 11,
+    color: Colors.terracotta,
   },
   checkbox: {
     width: 28,
@@ -963,6 +1308,14 @@ const styles = StyleSheet.create({
   rsvpAccepted: {
     backgroundColor: Colors.fresh.bg,
   },
+  rsvpCanGo: {
+    backgroundColor: '#E8F5E9',
+    borderColor: '#2E7D32',
+  },
+  rsvpCannotGo: {
+    backgroundColor: '#FFEBEE',
+    borderColor: '#C62828',
+  },
   rsvpPending: {
     backgroundColor: Colors.soon.bg,
   },
@@ -1002,6 +1355,9 @@ const styles = StyleSheet.create({
   },
   capsuleBarFilled: {
     backgroundColor: Colors.sage,
+  },
+  capsuleBarDeclined: {
+    backgroundColor: '#EF9A9A',
   },
   waitingButtonsStack: {
     gap: 12,
