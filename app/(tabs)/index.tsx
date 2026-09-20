@@ -1,39 +1,38 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as ImagePicker from "expo-image-picker";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import {
-  View,
-  Text,
-  ScrollView,
-  Pressable,
-  StyleSheet,
   ActivityIndicator,
   Alert,
-} from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as ImagePicker from 'expo-image-picker';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp } from '../../context/AppContext';
-import { Colors, Fonts, Radius } from '../../constants/Theme';
-import StickerCard from '../../components/ui/StickerCard';
-import StickerButton from '../../components/ui/StickerButton';
-import StatusChip from '../../components/ui/StatusChip';
-import FoodCharacter from '../../components/FoodCharacter';
-import AddGroceriesActionModal from '../../components/AddGroceriesActionModal';
-import AddGroceryModal from '../../components/AddGroceryModal';
-import ScanReceiptModal from '../../components/ScanReceiptModal';
-import RemoveItemSheet from '../../components/RemoveItemSheet';
-import FeastFriendRequirementModal from '../../components/FeastFriendRequirementModal';
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import AddGroceriesActionModal from "../../components/AddGroceriesActionModal";
+import AddGroceryModal from "../../components/AddGroceryModal";
+import FeastFriendRequirementModal from "../../components/FeastFriendRequirementModal";
+import FoodCharacter from "../../components/FoodCharacter";
+import RemoveItemSheet from "../../components/RemoveItemSheet";
+import ScanReceiptModal from "../../components/ScanReceiptModal";
+import StatusChip from "../../components/ui/StatusChip";
+import StickerButton from "../../components/ui/StickerButton";
+import { Colors, Fonts } from "../../constants/Theme";
+import { useApp } from "../../context/AppContext";
 import {
   CharacterKey,
-  lookupFoodCharacter,
+  formatShelfTimeLeft,
   getDaysLeft,
   getStatusUrgency,
-  formatShelfTimeLeft,
-} from '../../services/foodCharacterLookup';
-import { FridgeItemRow } from '../../services/supabase/types';
-import { ScannedReceiptResult } from '../../services/receiptOcrService';
+  lookupFoodCharacter,
+} from "../../services/foodCharacterLookup";
+import { ScannedReceiptResult } from "../../services/receiptOcrService";
+import { FridgeItemRow } from "../../services/supabase/types";
 
-type FilterType = 'all' | 'fresh' | 'soon' | 'now';
+type FilterType = "all" | "fresh" | "soon" | "now";
 
 export default function ShelfScreen() {
   const router = useRouter();
@@ -49,7 +48,7 @@ export default function ShelfScreen() {
   } = useApp();
 
   // Buddy avatar state
-  const [buddyKey, setBuddyKey] = useState<CharacterKey>('can');
+  const [buddyKey, setBuddyKey] = useState<CharacterKey>("can");
 
   // Keep buddy in sync with You/Profile selections
   useFocusEffect(
@@ -59,7 +58,7 @@ export default function ShelfScreen() {
         try {
           const stored =
             (await AsyncStorage.getItem(`user_buddy_${currentUser.id}`)) ||
-            (await AsyncStorage.getItem('user_buddy_default'));
+            (await AsyncStorage.getItem("user_buddy_default"));
           if (isMounted && stored) {
             setBuddyKey(stored as CharacterKey);
           }
@@ -69,19 +68,23 @@ export default function ShelfScreen() {
       return () => {
         isMounted = false;
       };
-    }, [currentUser.id])
+    }, [currentUser.id]),
   );
 
   // Modals
   const [isAddMenuVisible, setIsAddMenuVisible] = useState(false);
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
   const [isScanModalVisible, setIsScanModalVisible] = useState(false);
-  const [scanImagePayload, setScanImagePayload] = useState<{ base64: string; mimeType: string } | null>(null);
-  const [selectedItemForRemove, setSelectedItemForRemove] = useState<FridgeItemRow | null>(null);
+  const [scanImagePayload, setScanImagePayload] = useState<{
+    base64: string;
+    mimeType: string;
+  } | null>(null);
+  const [selectedItemForRemove, setSelectedItemForRemove] =
+    useState<FridgeItemRow | null>(null);
   const [isFriendReqModalVisible, setIsFriendReqModalVisible] = useState(false);
 
   // Filter state
-  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+  const [activeFilter, setActiveFilter] = useState<FilterType>("all");
 
   // User items
   const userItems = useMemo(() => {
@@ -98,7 +101,7 @@ export default function ShelfScreen() {
       const urgency = getStatusUrgency(daysLeft);
       const lookup = lookupFoodCharacter(item.name);
 
-      if (urgency.status === 'now') redCount++;
+      if (urgency.status === "now") redCount++;
       if (urgency.needsRescue) yellowAndRedCount++;
 
       return {
@@ -120,8 +123,10 @@ export default function ShelfScreen() {
 
   // Filtered items
   const filteredItems = useMemo(() => {
-    if (activeFilter === 'all') return categorizedItems;
-    return categorizedItems.filter((item) => item.urgencyStatus === activeFilter);
+    if (activeFilter === "all") return categorizedItems;
+    return categorizedItems.filter(
+      (item) => item.urgencyStatus === activeFilter,
+    );
   }, [categorizedItems, activeFilter]);
 
   // Chunk items into rows of 3 for the wooden shelves
@@ -135,19 +140,19 @@ export default function ShelfScreen() {
 
   // Friends check for Feast Mode
   const mutualFriends = useMemo(() => {
-    return friends.filter((f) => f.status === 'accepted');
+    return friends.filter((f) => f.status === "accepted");
   }, [friends]);
 
   const handleFeastModePress = () => {
     if (mutualFriends.length === 0) {
       setIsFriendReqModalVisible(true);
     } else {
-      router.push('/(tabs)/feasts');
+      router.push("/(tabs)/feasts");
     }
   };
 
   const handleRescuePress = () => {
-    router.push('/rescue');
+    router.push("/rescue");
   };
 
   const handleTossItem = (item: FridgeItemRow) => {
@@ -166,9 +171,16 @@ export default function ShelfScreen() {
     dateBoughtIso: string,
     category: string,
     shelfLifeDays: number,
-    dateExpiredIso?: string
+    dateExpiredIso?: string,
   ) => {
-    await addManualFridgeItem(name, price, dateBoughtIso, category, shelfLifeDays, dateExpiredIso);
+    await addManualFridgeItem(
+      name,
+      price,
+      dateBoughtIso,
+      category,
+      shelfLifeDays,
+      dateExpiredIso,
+    );
   };
 
   const handleAddReceipt = async (receipt: ScannedReceiptResult) => {
@@ -180,12 +192,15 @@ export default function ShelfScreen() {
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Camera Permission Required', 'Camera access is required to take receipt photos.');
+        Alert.alert(
+          "Camera Permission Required",
+          "Camera access is required to take receipt photos.",
+        );
         return;
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
+        mediaTypes: ["images"],
         base64: true,
         quality: 0.8,
       });
@@ -193,26 +208,30 @@ export default function ShelfScreen() {
       if (!result.canceled && result.assets[0]?.base64) {
         setScanImagePayload({
           base64: result.assets[0].base64,
-          mimeType: result.assets[0].mimeType || 'image/jpeg',
+          mimeType: result.assets[0].mimeType || "image/jpeg",
         });
         setIsScanModalVisible(true);
       }
     } catch {
-      Alert.alert('Camera Error', 'Could not open camera.');
+      Alert.alert("Camera Error", "Could not open camera.");
     }
   };
 
   const handleSelectUploadPhoto = async () => {
     setIsAddMenuVisible(false);
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Gallery Permission Required', 'Gallery access is needed to select receipt photos.');
+        Alert.alert(
+          "Gallery Permission Required",
+          "Gallery access is needed to select receipt photos.",
+        );
         return;
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
+        mediaTypes: ["images"],
         base64: true,
         quality: 0.8,
       });
@@ -220,12 +239,12 @@ export default function ShelfScreen() {
       if (!result.canceled && result.assets[0]?.base64) {
         setScanImagePayload({
           base64: result.assets[0].base64,
-          mimeType: result.assets[0].mimeType || 'image/jpeg',
+          mimeType: result.assets[0].mimeType || "image/jpeg",
         });
         setIsScanModalVisible(true);
       }
     } catch {
-      Alert.alert('Gallery Error', 'Could not access photo library.');
+      Alert.alert("Gallery Error", "Could not access photo library.");
     }
   };
 
@@ -244,7 +263,10 @@ export default function ShelfScreen() {
     <View style={styles.screen}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.content, { paddingBottom: safeBottomPadding }]}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: safeBottomPadding },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {/* SECTION 1: Header */}
@@ -253,14 +275,19 @@ export default function ShelfScreen() {
             <Text style={styles.appTitle}>Fridge Friends</Text>
             <Text style={styles.urgencySubtitle}>
               {urgentRedCount === 0
-                ? 'All groceries are fresh!'
-                : `${urgentRedCount} ${urgentRedCount === 1 ? 'item needs' : 'items need'} rescuing!`}
+                ? "All groceries are fresh!"
+                : `${urgentRedCount} ${urgentRedCount === 1 ? "item needs" : "items need"} rescuing!`}
             </Text>
           </View>
 
           {/* Profile Avatar (static image, non-clickable) */}
           <View style={styles.avatarSticker}>
-            <FoodCharacter foodKey={buddyKey} mood="happy" size={44} animate={false} />
+            <FoodCharacter
+              foodKey={buddyKey}
+              mood="happy"
+              size={44}
+              animate={false}
+            />
           </View>
         </View>
 
@@ -276,31 +303,37 @@ export default function ShelfScreen() {
 
         {/* SECTION 3: "Your shelf" Section Header & Status Filter Chips */}
         <View style={styles.shelfSectionHeader}>
-          <Text style={styles.shelfTitle}>Your shelf</Text>
+          <Text style={styles.shelfTitle}>Your Fridge</Text>
           <View style={styles.filterChipsRow}>
             <StatusChip
               label="All"
               status="neutral"
-              isSelected={activeFilter === 'all'}
-              onPress={() => setActiveFilter('all')}
+              isSelected={activeFilter === "all"}
+              onPress={() => setActiveFilter("all")}
             />
             <StatusChip
               label="Fresh"
               status="fresh"
-              isSelected={activeFilter === 'fresh'}
-              onPress={() => setActiveFilter(activeFilter === 'fresh' ? 'all' : 'fresh')}
+              isSelected={activeFilter === "fresh"}
+              onPress={() =>
+                setActiveFilter(activeFilter === "fresh" ? "all" : "fresh")
+              }
             />
             <StatusChip
               label="Use soon"
               status="soon"
-              isSelected={activeFilter === 'soon'}
-              onPress={() => setActiveFilter(activeFilter === 'soon' ? 'all' : 'soon')}
+              isSelected={activeFilter === "soon"}
+              onPress={() =>
+                setActiveFilter(activeFilter === "soon" ? "all" : "soon")
+              }
             />
             <StatusChip
               label="Use now"
               status="now"
-              isSelected={activeFilter === 'now'}
-              onPress={() => setActiveFilter(activeFilter === 'now' ? 'all' : 'now')}
+              isSelected={activeFilter === "now"}
+              onPress={() =>
+                setActiveFilter(activeFilter === "now" ? "all" : "now")
+              }
             />
           </View>
         </View>
@@ -309,9 +342,9 @@ export default function ShelfScreen() {
         {shelfRows.length === 0 ? (
           <View style={styles.emptyShelfBox}>
             <FoodCharacter foodKey="spinach" mood="happy" size={70} />
-            <Text style={styles.emptyShelfTitle}>Your shelf is empty</Text>
+            <Text style={styles.emptyShelfTitle}>Your fridge is empty</Text>
             <Text style={styles.emptyShelfSub}>
-              Tap + Add groceries or scan a receipt to stock your shelf.
+              Tap + Add groceries or scan a receipt to stock your fridge.
             </Text>
           </View>
         ) : (
@@ -350,9 +383,14 @@ export default function ShelfScreen() {
                   ))}
 
                   {/* Empty spot spacers to maintain 3-column layout */}
-                  {Array.from({ length: Math.max(0, 3 - row.length) }).map((_, emptyIdx) => (
-                    <View key={`empty-${emptyIdx}`} style={styles.foodSpotPlaceholder} />
-                  ))}
+                  {Array.from({ length: Math.max(0, 3 - row.length) }).map(
+                    (_, emptyIdx) => (
+                      <View
+                        key={`empty-${emptyIdx}`}
+                        style={styles.foodSpotPlaceholder}
+                      />
+                    ),
+                  )}
                 </View>
 
                 {/* Wooden Plank Graphic */}
@@ -436,7 +474,7 @@ export default function ShelfScreen() {
         onClose={() => setIsFriendReqModalVisible(false)}
         onAddFriend={() => {
           setIsFriendReqModalVisible(false);
-          router.push('/(tabs)/insights');
+          router.push("/(tabs)/insights");
         }}
       />
     </View>
@@ -451,8 +489,8 @@ const styles = StyleSheet.create({
   loadingScreen: {
     flex: 1,
     backgroundColor: Colors.cream,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   scroll: {
     flex: 1,
@@ -462,9 +500,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 20,
   },
   headerTextWrap: {
@@ -489,9 +527,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.fresh.bg,
     borderWidth: 2.5,
     borderColor: Colors.ink,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
     shadowColor: Colors.ink,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 1,
@@ -511,18 +549,18 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   filterChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
   },
   emptyShelfBox: {
     marginTop: 40,
     padding: 30,
     borderRadius: 24,
-    backgroundColor: 'rgba(255, 253, 247, 0.7)',
+    backgroundColor: "rgba(255, 253, 247, 0.7)",
     borderWidth: 2,
     borderColor: Colors.ink,
-    alignItems: 'center',
+    alignItems: "center",
     gap: 10,
   },
   emptyShelfTitle: {
@@ -533,8 +571,8 @@ const styles = StyleSheet.create({
   emptyShelfSub: {
     fontFamily: Fonts.bodyRegular,
     fontSize: 14,
-    color: '#76665A',
-    textAlign: 'center',
+    color: "#76665A",
+    textAlign: "center",
   },
   shelvesContainer: {
     marginTop: 8,
@@ -543,30 +581,30 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   shelfCharactersRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     paddingHorizontal: 8,
-    alignItems: 'flex-end',
+    alignItems: "flex-end",
     marginBottom: -6, // Characters stand on plank
   },
   foodSpot: {
-    width: '31%',
-    alignItems: 'center',
+    width: "31%",
+    alignItems: "center",
     gap: 4,
   },
   foodSpotPlaceholder: {
-    width: '31%',
+    width: "31%",
   },
   foodName: {
     fontFamily: Fonts.headingSemiBold,
     fontSize: 14,
     color: Colors.ink,
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: 2,
   },
   woodenPlankWrapper: {
-    width: '100%',
-    position: 'relative',
+    width: "100%",
+    position: "relative",
   },
   woodenPlank: {
     height: 18,
@@ -574,11 +612,11 @@ const styles = StyleSheet.create({
     borderWidth: 2.5,
     borderColor: Colors.ink,
     borderRadius: 6,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   woodPlankHighlight: {
     height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    backgroundColor: "rgba(255, 255, 255, 0.25)",
   },
   woodPlankUnderShadow: {
     height: 6,
@@ -592,18 +630,18 @@ const styles = StyleSheet.create({
     borderColor: Colors.ink,
   },
   bottomFloatingBar: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(251, 243, 228, 0.95)',
+    backgroundColor: "rgba(251, 243, 228, 0.95)",
     borderTopWidth: 1.5,
-    borderTopColor: '#E6D7C3',
+    borderTopColor: "#E6D7C3",
     paddingHorizontal: 16,
     paddingTop: 12,
   },
   bottomButtonsStack: {
-    flexDirection: 'column',
+    flexDirection: "column",
     gap: 10,
   },
 });
