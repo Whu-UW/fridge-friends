@@ -15,6 +15,7 @@ export interface ScannedReceiptItem {
   category: string;
   quantity?: string;
   shelfLifeDays?: number;
+  dateExpired?: string;
 }
 
 export interface ScannedReceiptResult {

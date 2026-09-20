@@ -1,8 +1,19 @@
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import {
+  Fredoka_500Medium,
+  Fredoka_600SemiBold,
+  Fredoka_700Bold,
+} from '@expo-google-fonts/fredoka';
+import {
+  Nunito_400Regular,
+  Nunito_600SemiBold,
+  Nunito_700Bold,
+} from '@expo-google-fonts/nunito';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppProvider } from '../context/AppContext';
 
 export {
@@ -15,9 +26,46 @@ export const unstable_settings = {
 
 SplashScreen.preventAutoHideAsync();
 
+function RootNavigation() {
+  const router = useRouter();
+  const segments = useSegments();
+
+  useEffect(() => {
+    const checkOnboarding = async () => {
+      try {
+        const completed = await AsyncStorage.getItem('has_completed_onboarding');
+        const inAuth = segments[0] === 'signup' || segments[0] === 'onboarding';
+        if (completed !== 'true' && !inAuth) {
+          router.replace('/signup');
+        }
+      } catch {}
+    };
+
+    checkOnboarding();
+  }, [segments]);
+
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="rescue" />
+      <Stack.Screen name="recipe/[id]" />
+      <Stack.Screen name="friend/[id]" />
+      <Stack.Screen name="signup" />
+      <Stack.Screen name="onboarding" />
+      <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+    </Stack>
+  );
+}
+
 export default function RootLayout() {
   const [loaded, error] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    Fredoka_500Medium,
+    Fredoka_600SemiBold,
+    Fredoka_700Bold,
+    Nunito_400Regular,
+    Nunito_600SemiBold,
+    Nunito_700Bold,
   });
 
   useEffect(() => {
@@ -37,24 +85,7 @@ export default function RootLayout() {
   return (
     <AppProvider>
       <StatusBar style="auto" />
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="recipe/[id]"
-          options={{
-            title: 'Recipe & Waste Impact',
-            headerBackTitle: 'Back',
-          }}
-        />
-        <Stack.Screen
-          name="friend/[id]"
-          options={{
-            title: "Friend's Fridge",
-            headerBackTitle: 'Back',
-          }}
-        />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-      </Stack>
+      <RootNavigation />
     </AppProvider>
   );
 }

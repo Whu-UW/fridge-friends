@@ -1,6 +1,6 @@
 /**
  * FastAPI Backend API Client & Data Adapters
- * Target Base URL: https://fridge-friends-be.fastapicloud.dev
+ * Target Base URL: https://fridge-friends-be-144bbbd9.fastapicloud.dev
  */
 
 import {
@@ -12,8 +12,11 @@ import {
 } from './supabase/types';
 import type { FriendEntry, FeastInvite, FeastFriendStatus } from '../context/AppContext';
 
-export const BACKEND_BASE_URL =
-  process.env.EXPO_PUBLIC_BACKEND_URL || 'https://fridge-friends-be.fastapicloud.dev';
+const rawBackendUrl =
+  process.env.EXPO_PUBLIC_BACKEND_URL ||
+  'https://fridge-friends-be-144bbbd9.fastapicloud.dev';
+
+export const BACKEND_BASE_URL = rawBackendUrl.replace(/\/+$/, '');
 
 /* ============================================================================
  * Backend Types (from OpenAPI 3.1.0 specification)
@@ -21,8 +24,9 @@ export const BACKEND_BASE_URL =
 
 export interface BackendUser {
   id: number;
-  email: string;
+  email: string | null;
   name: string;
+  username?: string | null;
   created_at: string;
 }
 
@@ -76,7 +80,8 @@ export interface BackendFriend {
 export interface BackendAttendeeRead {
   user_id: number;
   name: string;
-  email: string;
+  email: string | null;
+  username?: string | null;
   response: 'invited' | 'accepted' | 'declined';
   responded_at: string | null;
   is_host: boolean;
@@ -179,27 +184,37 @@ export function getUserAvatar(userId: number, name: string): string {
 }
 
 export function toFrontendProfile(user: BackendUser): ProfileRow {
-  const username = user.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_');
+  const emailUsername =
+    user.email && typeof user.email === 'string'
+      ? user.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_')
+      : '';
+  const username = user.username || emailUsername || `user_${user.id}`;
   return {
     id: String(user.id),
-    email: user.email,
-    username: username || `user_${user.id}`,
-    display_name: user.name,
-    avatar_url: getUserAvatar(user.id, user.name),
+    email: user.email || '',
+    username,
+    display_name: user.name || 'User',
+    avatar_url: getUserAvatar(user.id, user.name || 'User'),
     created_at: user.created_at,
   };
 }
 
 export function toFrontendFriend(backendFriend: BackendFriend): FriendEntry {
   const friendUser = backendFriend.friend;
-  const username = friendUser.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_');
+  const friendId = friendUser?.id || backendFriend.friend_id;
+  const friendName = friendUser?.name || 'Friend';
+  const emailUsername =
+    friendUser?.email && typeof friendUser.email === 'string'
+      ? friendUser.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_')
+      : '';
+  const username = friendUser?.username || emailUsername || `user_${friendId}`;
   return {
-    id: String(friendUser.id),
-    email: friendUser.email,
-    username: username || `user_${friendUser.id}`,
-    display_name: friendUser.name,
-    avatar_url: getUserAvatar(friendUser.id, friendUser.name),
-    created_at: friendUser.created_at,
+    id: String(friendId),
+    email: friendUser?.email || '',
+    username,
+    display_name: friendName,
+    avatar_url: getUserAvatar(friendId, friendName),
+    created_at: friendUser?.created_at || backendFriend.created_at,
     status: backendFriend.status === 'accepted' ? 'accepted' : 'pending',
   };
 }
@@ -379,7 +394,7 @@ export function toFrontendFeast(backendFeast: BackendFeastRead): FeastInvite {
     `feast-rec-${backendFeast.id}`
   );
 
-  const invitedFriends: FeastFriendStatus[] = backendFeast.attendees
+  const invitedFriends: FeastFriendStatus[] = (backendFeast.attendees || [])
     .filter((a) => !a.is_host)
     .map((attendee) => {
       const status: 'accepted' | 'pending' | 'declined' =
@@ -389,13 +404,18 @@ export function toFrontendFeast(backendFeast: BackendFeastRead): FeastInvite {
           ? 'declined'
           : 'pending';
 
+      const emailUsername =
+        attendee.email && typeof attendee.email === 'string'
+          ? attendee.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_')
+          : '';
+      const username = attendee.username || emailUsername || `user_${attendee.user_id}`;
+      const attendeeName = attendee.name || 'Guest';
+
       return {
         id: String(attendee.user_id),
-        name: attendee.name,
-        username:
-          attendee.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_') ||
-          `user_${attendee.user_id}`,
-        avatarUrl: getUserAvatar(attendee.user_id, attendee.name),
+        name: attendeeName,
+        username,
+        avatarUrl: getUserAvatar(attendee.user_id, attendeeName),
         status,
       };
     });

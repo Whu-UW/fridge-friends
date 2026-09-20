@@ -338,6 +338,10 @@ export async function generateTopSoloRecipes(
   expiringItems: FridgeItemRow[],
   currentUser: ProfileRow
 ): Promise<RecipeComposite[]> {
+  if (!expiringItems || expiringItems.length === 0) {
+    return [];
+  }
+
   const focusItems = expiringItems.map((i) => i.name);
   const primary1 = focusItems[0] || 'Market Fresh Produce';
   const primary2 = focusItems[1] || 'Garden Greens';
@@ -440,8 +444,8 @@ export async function generateTopSoloRecipes(
       ingredients,
       cookingTasks,
       projectedImpact: {
-        foodRescuedGrams: Math.round(baseGrams * (1 - idx * 0.05)),
-        dollarsSaved: Number((baseDollars * (1 - idx * 0.05)).toFixed(2)),
+        foodRescuedGrams: baseGrams,
+        dollarsSaved: baseDollars,
       },
       rsvps: [currentUser.id],
       createdAt: new Date().toISOString(),

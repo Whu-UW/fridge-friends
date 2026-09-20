@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -10,35 +10,35 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../context/AppContext';
+import { Colors, Fonts } from '../../constants/Theme';
+import StickerCard from '../../components/ui/StickerCard';
+import StickerButton from '../../components/ui/StickerButton';
+import FoodCharacter from '../../components/FoodCharacter';
+import RescuedCelebrationModal from '../../components/RescuedCelebrationModal';
+import CrushedOutcomeModal from '../../components/CrushedOutcomeModal';
 
-export default function RecipeViewScreen() {
+export default function CookAndCheckinScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { currentUser, getRecipe, rsvpRecipe, backendSyncAttempted } = useApp();
+  const {
+    getRecipe,
+    removeFridgeItem,
+    recordRescuedMeal,
+    recordWastedMeal,
+    fridgeItems,
+    backendSyncAttempted,
+  } = useApp();
+
+  const [isRescuedModalVisible, setIsRescuedModalVisible] = useState(false);
+  const [isCrushedModalVisible, setIsCrushedModalVisible] = useState(false);
 
   const recipe = id ? getRecipe(id) : undefined;
 
-  // Group ingredients by owner
-  const ingredientsByOwner = useMemo(() => {
-    if (!recipe) return {};
-    const map: Record<string, string[]> = {};
-    recipe.ingredients.forEach((ing) => {
-      const owner = ing.owner_name || 'Contributor';
-      if (!map[owner]) {
-        map[owner] = [];
-      }
-      map[owner].push(`${ing.item_name} (${ing.quantity})`);
-    });
-    return map;
-  }, [recipe]);
-
   if (!backendSyncAttempted) {
     return (
-      <View style={styles.initialLoadingContainer}>
-        <ActivityIndicator size="large" color="#2563EB" />
-        <Text style={styles.initialLoadingTitle}>Connecting to Live Database...</Text>
-        <Text style={styles.initialLoadingSub}>Loading recipe details...</Text>
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color={Colors.terracotta} />
       </View>
     );
   }
@@ -47,9 +47,6 @@ export default function RecipeViewScreen() {
     return (
       <View style={styles.errorContainer}>
         <Text style={styles.errorTitle}>Recipe Not Found</Text>
-        <Text style={styles.errorSubtitle}>
-          Could not find recipe with ID: {id}
-        </Text>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <Text style={styles.backButtonText}>← Go Back</Text>
         </Pressable>
@@ -57,405 +54,269 @@ export default function RecipeViewScreen() {
     );
   }
 
-  const isRsvpd = recipe.rsvps.includes(currentUser.id);
+  // Rescued foods list
+  const rescuedFoods = recipe.focusExpiringItems.length > 0
+    ? recipe.focusExpiringItems
+    : recipe.ingredients.map((i) => i.item_name);
 
-  const handleToggleRsvp = () => {
-    rsvpRecipe(recipe.id, currentUser.id);
+  const dollarsSaved = Math.round(recipe.projectedImpact.dollarsSaved || 11);
+
+  // Outcome Handlers
+  const handleMarkRescued = () => {
+    recordRescuedMeal(rescuedFoods, dollarsSaved, recipe.title);
+    setIsRescuedModalVisible(true);
   };
 
+  const handleMarkFailed = () => {
+    recordWastedMeal(rescuedFoods.slice(0, 1), 3.49, recipe.title);
+    setIsCrushedModalVisible(true);
+  };
+
+  const handleReturnToShelf = () => {
+    setIsRescuedModalVisible(false);
+    setIsCrushedModalVisible(false);
+    router.replace('/(tabs)');
+  };
+
+  const safeBottomPadding = Math.max(insets.bottom, 16) + 30;
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={[
-        styles.content,
-        { paddingBottom: Math.max(insets.bottom, 20) + 40 },
-      ]}
-    >
-      {/* Header Title & Tags */}
+    <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>{recipe.title}</Text>
-        <View style={styles.badgeRow}>
-          <Text style={styles.cookTimeBadge}>⏱ {recipe.cookTime}</Text>
-          {recipe.isCollaborative ? (
-            <Text style={styles.collabBadge}>
-              👥 {recipe.circleName ? `Dinner Party: ${recipe.circleName}` : 'Collaborative Dinner Party'}
-            </Text>
-          ) : (
-            <Text style={styles.soloBadge}>👤 Solo Waste-Reduction</Text>
-          )}
-        </View>
-
-        {/* Local / Hardcoded Data Notice */}
-        <View style={styles.hardcodedNotice}>
-          <Text style={styles.hardcodedNoticeText}>
-            ℹ️ [LOCAL / AI-GENERATED] This recipe and task breakdown are generated on-demand and stored in local app state (backend database recipes table pending).
-          </Text>
-        </View>
-      </View>
-
-      {/* Waste Reduction Focus Highlight */}
-      <View style={styles.focusCard}>
-        <Text style={styles.focusTitle}>🌱 Waste-Reduction Priority</Text>
-        <Text style={styles.focusSub}>
-          This recipe was generated by the LLM to rescue near-expiration items:
-        </Text>
-        <View style={styles.focusChipRow}>
-          {recipe.focusExpiringItems.map((item, idx) => (
-            <View key={idx} style={styles.focusChip}>
-              <Text style={styles.focusChipText}>⚠️ {item}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
-
-      {/* Projected Impact Box */}
-      <View style={styles.impactCard}>
-        <Text style={styles.impactHeader}>📊 Projected Impact</Text>
-        <View style={styles.impactGrid}>
-          <View style={styles.impactStat}>
-            <Text style={styles.impactValue}>
-              {recipe.projectedImpact.foodRescuedGrams}g
-            </Text>
-            <Text style={styles.impactLabel}>Food Rescued</Text>
-          </View>
-          <View style={styles.impactDivider} />
-          <View style={styles.impactStat}>
-            <Text style={styles.impactValue}>
-              ${recipe.projectedImpact.dollarsSaved.toFixed(2)}
-            </Text>
-            <Text style={styles.impactLabel}>Dollars Saved</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Section: Ingredients & Contributors */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Ingredients &amp; Contributors</Text>
-        <View style={styles.card}>
-          {Object.entries(ingredientsByOwner).map(([owner, items]) => (
-            <View key={owner} style={styles.ingredientGroup}>
-              <Text style={styles.ownerHeading}>
-                {owner === currentUser.display_name ? `${owner} (You)` : owner} brings:
-              </Text>
-              {items.map((item, idx) => (
-                <Text key={idx} style={styles.ingredientItem}>
-                  • {item}
-                </Text>
-              ))}
-            </View>
-          ))}
-        </View>
-      </View>
-
-      {/* Section: Cooking Tasks */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Step-by-Step Cooking Tasks</Text>
-        <View style={styles.card}>
-          {recipe.cookingTasks.map((task) => (
-            <View key={task.step_number} style={styles.taskRow}>
-              <View style={styles.stepBadge}>
-                <Text style={styles.stepBadgeText}>{task.step_number}</Text>
-              </View>
-              <View style={styles.taskDetails}>
-                <Text style={styles.taskInstruction}>{task.instruction}</Text>
-                <Text style={styles.assignedMember}>
-                  Assigned to: {task.assigned_to_name}
-                </Text>
-              </View>
-            </View>
-          ))}
-        </View>
-      </View>
-
-      {/* RSVP Section */}
-      <View style={styles.rsvpSection}>
-        <Pressable
-          style={[styles.rsvpBtn, isRsvpd ? styles.rsvpdBtn : styles.notRsvpdBtn]}
-          onPress={handleToggleRsvp}>
-          <Text style={styles.rsvpBtnText}>
-            {isRsvpd
-              ? '✓ Attendance Confirmed (Tap to Cancel)'
-              : '👋 RSVP / Confirm Attendance'}
-          </Text>
+        <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
+          <Text style={styles.backBtnArrow}>‹</Text>
         </Pressable>
-        <Text style={styles.rsvpNotice}>
-          {recipe.rsvps.length} member{recipe.rsvps.length === 1 ? '' : 's'} confirmed
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.recipeTitle}>{recipe.title}</Text>
+          <Text style={styles.recipeMeta}>
+            {recipe.cookTime || '40 min'} · serves 2
+          </Text>
+        </View>
       </View>
-    </ScrollView>
+
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: safeBottomPadding }]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* SECTION: You're rescuing character strip */}
+        <StickerCard backgroundColor={Colors.paper} borderRadius={22} style={styles.rescuingCard}>
+          <Text style={styles.rescuingHeading}>You're rescuing</Text>
+          <View style={styles.charactersRow}>
+            {rescuedFoods.slice(0, 4).map((food, idx) => (
+              <View key={idx} style={styles.characterSpot}>
+                <FoodCharacter name={food} mood="uneasy" size={68} animate={true} />
+                <Text style={styles.characterName} numberOfLines={1}>
+                  {food}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </StickerCard>
+
+        {/* SECTION: Cooking Steps */}
+        <StickerCard backgroundColor={Colors.paper} borderRadius={22} style={styles.stepsCard}>
+          {recipe.cookingTasks && recipe.cookingTasks.length > 0 ? (
+            recipe.cookingTasks.map((task, sIdx) => (
+              <View key={task.id || sIdx} style={styles.stepRow}>
+                {/* Step number badge */}
+                <View style={styles.stepNumCircle}>
+                  <Text style={styles.stepNumText}>{task.step_number || sIdx + 1}</Text>
+                </View>
+                {/* Step text */}
+                <Text style={styles.stepBodyText}>{task.instruction}</Text>
+              </View>
+            ))
+          ) : (
+            <View style={styles.stepRow}>
+              <View style={styles.stepNumCircle}>
+                <Text style={styles.stepNumText}>1</Text>
+              </View>
+              <Text style={styles.stepBodyText}>
+                Prepare and combine ingredients, then cook until golden and delicious!
+              </Text>
+            </View>
+          )}
+        </StickerCard>
+
+        {/* SECTION: How did it go? */}
+        <View style={styles.checkinSection}>
+          <Text style={styles.checkinHeading}>How did it go?</Text>
+
+          <View style={styles.buttonStack}>
+            <StickerButton
+              title="We ate it! Rescued"
+              onPress={handleMarkRescued}
+              variant="primary"
+              size="large"
+            />
+
+            <StickerButton
+              title="It didn't work out"
+              onPress={handleMarkFailed}
+              variant="secondary"
+              size="large"
+            />
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Rescued Sunset Celebration Modal (Screen 10) */}
+      <RescuedCelebrationModal
+        visible={isRescuedModalVisible}
+        ingredientNames={rescuedFoods}
+        dollarsSaved={dollarsSaved}
+        onClose={() => setIsRescuedModalVisible(false)}
+        onDone={handleReturnToShelf}
+      />
+
+      {/* Crushed Hydraulic Press Modal (Screen 11) */}
+      <CrushedOutcomeModal
+        visible={isCrushedModalVisible}
+        crushedItemName={rescuedFoods[0] || 'Spinach'}
+        onlookerNames={rescuedFoods.slice(1, 3)}
+        wastedAmount={3.49}
+        onClose={() => setIsCrushedModalVisible(false)}
+        onBackToShelf={handleReturnToShelf}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: Colors.cream,
   },
-  content: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  header: {
-    marginBottom: 14,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  cookTimeBadge: {
-    backgroundColor: '#E0E7FF',
-    color: '#3730A3',
-    fontWeight: '600',
-    fontSize: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  collabBadge: {
-    backgroundColor: '#DCFCE7',
-    color: '#166534',
-    fontWeight: '600',
-    fontSize: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  soloBadge: {
-    backgroundColor: '#FEF3C7',
-    color: '#92400E',
-    fontWeight: '600',
-    fontSize: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  focusCard: {
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 14,
-  },
-  focusTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#991B1B',
-  },
-  focusSub: {
-    fontSize: 12,
-    color: '#B91C1C',
-    marginTop: 2,
-    marginBottom: 6,
-  },
-  focusChipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  focusChip: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#FCA5A5',
-  },
-  focusChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#B91C1C',
-  },
-  impactCard: {
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    borderRadius: 8,
-    padding: 14,
-    marginBottom: 14,
-  },
-  impactHeader: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#065F46',
-    marginBottom: 8,
-  },
-  impactGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-  },
-  impactStat: {
-    alignItems: 'center',
-  },
-  impactValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#047857',
-  },
-  impactLabel: {
-    fontSize: 11,
-    color: '#065F46',
-    marginTop: 2,
-  },
-  impactDivider: {
-    width: 1,
-    height: 32,
-    backgroundColor: '#A7F3D0',
-  },
-  section: {
-    marginBottom: 14,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 6,
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 12,
-  },
-  ingredientGroup: {
-    marginBottom: 8,
-  },
-  ownerHeading: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#2563EB',
-    marginBottom: 3,
-  },
-  ingredientItem: {
-    fontSize: 13,
-    color: '#374151',
-    marginLeft: 6,
-    marginVertical: 1,
-  },
-  taskRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 10,
-  },
-  stepBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#2563EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-    marginTop: 2,
-  },
-  stepBadgeText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 12,
-  },
-  taskDetails: {
+  loadingScreen: {
     flex: 1,
-  },
-  taskInstruction: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  assignedMember: {
-    fontSize: 11,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  rsvpSection: {
-    marginTop: 6,
-  },
-  rsvpBtn: {
-    paddingVertical: 12,
-    borderRadius: 8,
+    backgroundColor: Colors.cream,
+    justifyContent: 'center',
     alignItems: 'center',
-  },
-  notRsvpdBtn: {
-    backgroundColor: '#2563EB',
-  },
-  rsvpdBtn: {
-    backgroundColor: '#16A34A',
-  },
-  rsvpBtnText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  rsvpNotice: {
-    fontSize: 12,
-    color: '#6B7280',
-    textAlign: 'center',
-    marginTop: 6,
   },
   errorContainer: {
     flex: 1,
+    backgroundColor: Colors.cream,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
   errorTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#DC2626',
-  },
-  errorSubtitle: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginVertical: 8,
+    fontFamily: Fonts.headingBold,
+    fontSize: 20,
+    color: Colors.ink,
+    marginBottom: 16,
   },
   backButton: {
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 6,
+    padding: 12,
   },
   backButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 16,
+    color: Colors.terracotta,
   },
-  hardcodedNotice: {
-    backgroundColor: '#F1F5F9',
-    borderLeftWidth: 3,
-    borderLeftColor: '#64748B',
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginTop: 10,
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 54,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
-  hardcodedNoticeText: {
-    fontSize: 11,
-    color: '#475569',
-    lineHeight: 16,
-  },
-  initialLoadingContainer: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
+  backBtn: {
+    width: 40,
+    height: 40,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
   },
-  initialLoadingTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-    marginTop: 14,
+  backBtnArrow: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 34,
+    color: Colors.ink,
+    marginTop: -4,
   },
-  initialLoadingSub: {
+  recipeTitle: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 24,
+    color: Colors.ink,
+  },
+  recipeMeta: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 14,
+    color: '#76665A',
+    marginTop: 2,
+  },
+  content: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    gap: 20,
+  },
+  rescuingCard: {
+    padding: 18,
+  },
+  rescuingHeading: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 17,
+    color: Colors.ink,
+    marginBottom: 12,
+  },
+  charactersRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'flex-end',
+  },
+  characterSpot: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  characterName: {
+    fontFamily: Fonts.headingMedium,
     fontSize: 13,
-    color: '#6B7280',
-    marginTop: 4,
-    textAlign: 'center',
+    color: Colors.ink,
+  },
+  stepsCard: {
+    padding: 20,
+    gap: 18,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+  },
+  stepNumCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F8E3A9',
+    borderWidth: 2,
+    borderColor: Colors.ink,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  stepNumText: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 16,
+    color: Colors.ink,
+  },
+  stepBodyText: {
+    flex: 1,
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 16,
+    color: Colors.ink,
+    lineHeight: 24,
+  },
+  checkinSection: {
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  checkinHeading: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 22,
+    color: Colors.ink,
+    marginBottom: 16,
+  },
+  buttonStack: {
+    width: '100%',
+    gap: 12,
   },
 });
