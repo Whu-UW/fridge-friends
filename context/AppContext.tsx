@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useMemo, useEffect, useRef, ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../services/supabase/client';
 import { authService } from '../services/supabase/authService';
@@ -78,6 +79,7 @@ interface AppContextType {
   fridgeItems: FridgeItemRow[];
   shoppingTrips: ShoppingTripRow[];
   recipes: RecipeComposite[];
+  savedRecipes: RecipeComposite[];
   // Backend State & Data Source Tracking
   backendConnected: boolean;
   isSyncing: boolean;
@@ -136,7 +138,7 @@ interface AppContextType {
   getCircleExpiringItems: (circleId: string, hoursThreshold?: number) => FridgeItemRow[];
   generateSoloWasteRecipe: () => Promise<string>;
   generateCircleMealRecipe: (circleId: string) => Promise<string>;
-  generateTopSoloRecipes: () => Promise<RecipeComposite[]>;
+  generateTopSoloRecipes: (items?: FridgeItemRow[]) => Promise<RecipeComposite[]>;
   generateTopDinnerPartyRecipes: (
     partyName: string,
     invitedFriendIds: string[]
@@ -161,6 +163,8 @@ interface AppContextType {
   }) => void;
   rsvpRecipe: (recipeId: string, userId: string) => void;
   getRecipe: (id: string) => RecipeComposite | undefined;
+  saveRecipe: (recipe: RecipeComposite) => Promise<void>;
+  removeSavedRecipe: (id: string) => Promise<void>;
 }
 
 const CURRENT_USER_ID = '14'; // Sam Perera (Default Backend User ID)
@@ -737,6 +741,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [fridgeItems, setFridgeItems] = useState<FridgeItemRow[]>([]);
   const [shoppingTrips, setShoppingTrips] = useState<ShoppingTripRow[]>([]);
   const [recipes, setRecipes] = useState<RecipeComposite[]>([]);
+  const [savedRecipes, setSavedRecipes] = useState<RecipeComposite[]>([]);
+
+  useEffect(() => {
+    const loadSavedRecipes = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(`user_saved_recipes_${currentUser.id}`);
+        if (stored) {
+          setSavedRecipes(JSON.parse(stored));
+        }
+      } catch {}
+    };
+    loadSavedRecipes();
+  }, [currentUser.id]);
 
   // Backend Live State
   const [backendConnected, setBackendConnected] = useState<boolean>(false);
@@ -1622,12 +1639,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return recipe.id;
   };
 
-  const generateTopSoloRecipes = async (): Promise<RecipeComposite[]> => {
-    const expiring = getUserExpiringItems(72);
-    const itemsToUse =
-      expiring.length > 0
-        ? expiring
-        : fridgeItems.filter((i) => i.user_id === currentUser.id).slice(0, 4);
+  const generateTopSoloRecipes = async (
+    items?: FridgeItemRow[]
+  ): Promise<RecipeComposite[]> => {
+    let itemsToUse = items;
+    if (!itemsToUse || itemsToUse.length === 0) {
+      const expiring = getUserExpiringItems(72);
+      itemsToUse =
+        expiring.length > 0
+          ? expiring
+          : fridgeItems.filter((i) => i.user_id === currentUser.id).slice(0, 4);
+    }
 
     const generated = await llmGenerateTopSoloRecipes(itemsToUse, currentUser);
     setRecipes((prev) => [...generated, ...prev]);
@@ -1687,8 +1709,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
   };
 
+  const saveRecipe = async (recipe: RecipeComposite) => {
+    setSavedRecipes((prev) => {
+      if (prev.some((r) => r.id === recipe.id)) return prev;
+      const updated = [recipe, ...prev];
+      AsyncStorage.setItem(
+        `user_saved_recipes_${currentUser.id}`,
+        JSON.stringify(updated)
+      ).catch(() => {});
+      return updated;
+    });
+  };
+
+  const removeSavedRecipe = async (id: string) => {
+    setSavedRecipes((prev) => {
+      const updated = prev.filter((r) => r.id !== id);
+      AsyncStorage.setItem(
+        `user_saved_recipes_${currentUser.id}`,
+        JSON.stringify(updated)
+      ).catch(() => {});
+      return updated;
+    });
+  };
+
   const getRecipe = (id: string): RecipeComposite | undefined => {
-    return recipes.find((r) => r.id === id);
+    return savedRecipes.find((r) => r.id === id) || recipes.find((r) => r.id === id);
   };
 
   const value = useMemo(
@@ -1700,6 +1745,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       fridgeItems,
       shoppingTrips,
       recipes,
+      savedRecipes,
+      saveRecipe,
+      removeSavedRecipe,
       feasts,
       backendConnected,
       isSyncing,
@@ -1760,6 +1808,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       fridgeItems,
       shoppingTrips,
       recipes,
+      savedRecipes,
       backendConnected,
       isSyncing,
       backendSyncAttempted,

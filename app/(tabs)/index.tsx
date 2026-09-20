@@ -138,6 +138,31 @@ export default function ShelfScreen() {
     return rows;
   }, [filteredItems]);
 
+  // Multi-select state
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+
+  const toggleItemSelection = (id: string) => {
+    setSelectedItemIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const clearSelection = () => {
+    setSelectedItemIds([]);
+  };
+
+  const handleItemPress = (item: (typeof categorizedItems)[0]) => {
+    if (selectedItemIds.length > 0) {
+      toggleItemSelection(item.id);
+    } else {
+      setSelectedItemForRemove(item);
+    }
+  };
+
+  const handleItemLongPress = (item: (typeof categorizedItems)[0]) => {
+    toggleItemSelection(item.id);
+  };
+
   // Friends check for Feast Mode
   const mutualFriends = useMemo(() => {
     return friends.filter((f) => f.status === "accepted");
@@ -147,21 +172,30 @@ export default function ShelfScreen() {
     if (mutualFriends.length === 0) {
       setIsFriendReqModalVisible(true);
     } else {
-      router.push("/(tabs)/feasts");
+      router.push({
+        pathname: "/(tabs)/feasts",
+        params: { itemIds: selectedItemIds.join(",") },
+      });
     }
   };
 
   const handleRescuePress = () => {
-    router.push("/rescue");
+    if (selectedItemIds.length === 0) return;
+    router.push({
+      pathname: "/rescue",
+      params: { itemIds: selectedItemIds.join(",") },
+    });
   };
 
   const handleTossItem = (item: FridgeItemRow) => {
     removeFridgeItem(item.id);
+    setSelectedItemIds((prev) => prev.filter((id) => id !== item.id));
     setSelectedItemForRemove(null);
   };
 
   const handleRemoveMistake = (item: FridgeItemRow) => {
     removeFridgeItem(item.id);
+    setSelectedItemIds((prev) => prev.filter((id) => id !== item.id));
     setSelectedItemForRemove(null);
   };
 
@@ -257,7 +291,10 @@ export default function ShelfScreen() {
   }
 
   // Safe bottom padding preventing Android 3-button navigation bar overlap with stacked buttons
-  const safeBottomPadding = Math.max(insets.bottom, 16) + 160;
+  const safeBottomPadding =
+    selectedItemIds.length > 0
+      ? Math.max(insets.bottom, 16) + 160
+      : Math.max(insets.bottom, 16) + 40;
 
   return (
     <View style={styles.screen}>
@@ -301,41 +338,29 @@ export default function ShelfScreen() {
           />
         </View>
 
-        {/* SECTION 3: "Your shelf" Section Header & Status Filter Chips */}
+        {/* SECTION 3: "Your shelf" Section Header & Multi-Select Status */}
         <View style={styles.shelfSectionHeader}>
-          <Text style={styles.shelfTitle}>Your Fridge</Text>
-          <View style={styles.filterChipsRow}>
-            <StatusChip
-              label="All"
-              status="neutral"
-              isSelected={activeFilter === "all"}
-              onPress={() => setActiveFilter("all")}
-            />
-            <StatusChip
-              label="Fresh"
-              status="fresh"
-              isSelected={activeFilter === "fresh"}
-              onPress={() =>
-                setActiveFilter(activeFilter === "fresh" ? "all" : "fresh")
-              }
-            />
-            <StatusChip
-              label="Use soon"
-              status="soon"
-              isSelected={activeFilter === "soon"}
-              onPress={() =>
-                setActiveFilter(activeFilter === "soon" ? "all" : "soon")
-              }
-            />
-            <StatusChip
-              label="Use now"
-              status="now"
-              isSelected={activeFilter === "now"}
-              onPress={() =>
-                setActiveFilter(activeFilter === "now" ? "all" : "now")
-              }
-            />
+          <View style={styles.shelfHeaderRow}>
+            <Text style={styles.shelfTitle}>Your Fridge</Text>
+            {selectedItemIds.length === 0 ? (
+              <Text style={styles.shelfHelperText}>Hold item to select</Text>
+            ) : null}
           </View>
+
+          {selectedItemIds.length > 0 && (
+            <View style={styles.selectionBar}>
+              <Text style={styles.selectionCountText}>
+                {selectedItemIds.length} {selectedItemIds.length === 1 ? "item" : "items"} selected
+              </Text>
+              <Pressable
+                style={styles.cancelSelectionBtn}
+                onPress={clearSelection}
+                hitSlop={8}
+              >
+                <Text style={styles.cancelSelectionText}>Cancel</Text>
+              </Pressable>
+            </View>
+          )}
         </View>
 
         {/* SECTION 4: Wooden Shelf Planks with Characters */}
@@ -353,34 +378,47 @@ export default function ShelfScreen() {
               <View key={rowIdx} style={styles.shelfRowUnit}>
                 {/* Food Characters Standing on Plank */}
                 <View style={styles.shelfCharactersRow}>
-                  {row.map((item) => (
-                    <Pressable
-                      key={item.id}
-                      style={styles.foodSpot}
-                      onPress={() => setSelectedItemForRemove(item)}
-                    >
-                      <FoodCharacter
-                        foodKey={item.characterKey}
-                        mood={undefined}
-                        category={item.foodCategory}
-                        daysLeft={item.daysLeft}
-                        size={84}
-                        animate={true}
-                      />
+                  {row.map((item) => {
+                    const isSelected = selectedItemIds.includes(item.id);
+                    return (
+                      <Pressable
+                        key={item.id}
+                        style={[
+                          styles.foodSpot,
+                          isSelected && styles.foodSpotSelected,
+                        ]}
+                        onPress={() => handleItemPress(item)}
+                        onLongPress={() => handleItemLongPress(item)}
+                        delayLongPress={250}
+                      >
+                        {isSelected && (
+                          <View style={styles.selectedCheckBadge}>
+                            <Text style={styles.selectedCheckText}>✓</Text>
+                          </View>
+                        )}
+                        <FoodCharacter
+                          foodKey={item.characterKey}
+                          mood={undefined}
+                          category={item.foodCategory}
+                          daysLeft={item.daysLeft}
+                          size={84}
+                          animate={true}
+                        />
 
-                      {/* Name Label */}
-                      <Text style={styles.foodName} numberOfLines={1}>
-                        {item.name}
-                      </Text>
+                        {/* Name Label */}
+                        <Text style={styles.foodName} numberOfLines={1}>
+                          {item.name}
+                        </Text>
 
-                      {/* Urgency Status Chip */}
-                      <StatusChip
-                        label={item.timeFormatted}
-                        status={item.urgencyStatus}
-                        size="small"
-                      />
-                    </Pressable>
-                  ))}
+                        {/* Urgency Status Chip */}
+                        <StatusChip
+                          label={item.timeFormatted}
+                          status={item.urgencyStatus}
+                          size="small"
+                        />
+                      </Pressable>
+                    );
+                  })}
 
                   {/* Empty spot spacers to maintain 3-column layout */}
                   {Array.from({ length: Math.max(0, 3 - row.length) }).map(
@@ -408,30 +446,31 @@ export default function ShelfScreen() {
         )}
       </ScrollView>
 
-      {/* SECTION 5: Floating Bottom Action Buttons (Rescue & Feast) */}
-      <View
-        style={[
-          styles.bottomFloatingBar,
-          { paddingBottom: Math.max(insets.bottom, 12) + 8 },
-        ]}
-      >
-        <View style={styles.bottomButtonsStack}>
-          <StickerButton
-            title="Rescue ingredients"
-            badge={rescueBadgeCount}
-            onPress={handleRescuePress}
-            variant="primary"
-            size="large"
-          />
+      {/* SECTION 5: Floating Bottom Action Buttons (Only shown when items selected) */}
+      {selectedItemIds.length > 0 && (
+        <View
+          style={[
+            styles.bottomFloatingBar,
+            { paddingBottom: Math.max(insets.bottom, 12) + 8 },
+          ]}
+        >
+          <View style={styles.bottomButtonsStack}>
+            <StickerButton
+              title={`Rescue ingredients (${selectedItemIds.length})`}
+              onPress={handleRescuePress}
+              variant="primary"
+              size="large"
+            />
 
-          <StickerButton
-            title="Feast mode"
-            onPress={handleFeastModePress}
-            variant="secondary"
-            size="large"
-          />
+            <StickerButton
+              title="Feast mode"
+              onPress={handleFeastModePress}
+              variant="secondary"
+              size="large"
+            />
+          </View>
         </View>
-      </View>
+      )}
 
       {/* Modals & Sheets */}
       <AddGroceriesActionModal
@@ -542,11 +581,51 @@ const styles = StyleSheet.create({
   shelfSectionHeader: {
     marginBottom: 16,
   },
+  shelfHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "baseline",
+    marginBottom: 8,
+  },
   shelfTitle: {
     fontFamily: Fonts.headingBold,
     fontSize: 22,
     color: Colors.ink,
-    marginBottom: 10,
+  },
+  shelfHelperText: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 13,
+    color: "#8A776A",
+  },
+  selectionBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FFF2EB",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: Colors.terracotta,
+    marginTop: 4,
+  },
+  selectionCountText: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 15,
+    color: Colors.terracotta,
+  },
+  cancelSelectionBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    backgroundColor: Colors.paper,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: Colors.ink,
+  },
+  cancelSelectionText: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 13,
+    color: Colors.ink,
   },
   filterChipsRow: {
     flexDirection: "row",
@@ -591,6 +670,33 @@ const styles = StyleSheet.create({
     width: "31%",
     alignItems: "center",
     gap: 4,
+    position: "relative",
+    paddingVertical: 4,
+    borderRadius: 14,
+  },
+  foodSpotSelected: {
+    backgroundColor: "rgba(235, 107, 75, 0.12)",
+    borderWidth: 2,
+    borderColor: Colors.terracotta,
+  },
+  selectedCheckBadge: {
+    position: "absolute",
+    top: -6,
+    right: 2,
+    zIndex: 10,
+    backgroundColor: Colors.terracotta,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#FFF",
+  },
+  selectedCheckText: {
+    color: "#FFF",
+    fontSize: 12,
+    fontWeight: "bold",
   },
   foodSpotPlaceholder: {
     width: "31%",

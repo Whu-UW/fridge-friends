@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../context/AppContext';
 import { Colors, Fonts } from '../constants/Theme';
@@ -27,71 +27,107 @@ import { RecipeComposite } from '../services/supabase/types';
 export default function RescueScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { itemIds } = useLocalSearchParams<{ itemIds?: string }>();
   const {
     currentUser,
     friends,
     fridgeItems,
-    recipes,
     generateTopSoloRecipes,
+    savedRecipes,
+    saveRecipe,
+    removeSavedRecipe,
   } = useApp();
 
   const [isLoadingRecipes, setIsLoadingRecipes] = useState(false);
   const [soloRecipes, setSoloRecipes] = useState<RecipeComposite[]>([]);
   const [isFriendReqModalVisible, setIsFriendReqModalVisible] = useState(false);
+  const [expandedRecipeIds, setExpandedRecipeIds] = useState<string[]>([]);
 
-  // User at-risk items (Yellow and Red urgency)
-  const atRiskItems = useMemo(() => {
+  // Selected items from route params or fallback to user at-risk items
+  const selectedItemsData = useMemo(() => {
     const userItems = fridgeItems.filter((i) => i.user_id === currentUser.id);
-    return userItems
-      .map((item) => {
+
+    let rawList = userItems;
+    if (itemIds && itemIds.trim().length > 0) {
+      const idArray = itemIds.split(',').filter(Boolean);
+      const matched = userItems.filter((i) => idArray.includes(i.id));
+      if (matched.length > 0) {
+        rawList = matched;
+      }
+    } else {
+      // Fallback: at-risk items
+      rawList = userItems.filter((item) => {
         const daysLeft = getDaysLeft(item.expires_at);
         const urgency = getStatusUrgency(daysLeft);
-        const lookup = lookupFoodCharacter(item.name);
-        return {
-          ...item,
-          daysLeft,
-          urgencyStatus: urgency.status,
-          needsRescue: urgency.needsRescue,
-          timeFormatted: formatShelfTimeLeft(daysLeft),
-          characterKey: lookup.characterKey,
-          foodCategory: lookup.category,
-        };
-      })
-      .filter((item) => item.needsRescue)
-      .sort((a, b) => a.daysLeft - b.daysLeft);
-  }, [fridgeItems, currentUser.id]);
+        return urgency.needsRescue;
+      });
+    }
 
-  // Load recipes only if there are items needing rescue
-  useEffect(() => {
-    let isMounted = true;
+    const mapped = rawList.map((item) => {
+      const daysLeft = getDaysLeft(item.expires_at);
+      const urgency = getStatusUrgency(daysLeft);
+      const lookup = lookupFoodCharacter(item.name);
+      return {
+        ...item,
+        daysLeft,
+        urgencyStatus: urgency.status,
+        needsRescue: urgency.needsRescue,
+        timeFormatted: formatShelfTimeLeft(daysLeft),
+        characterKey: lookup.characterKey,
+        foodCategory: lookup.category,
+      };
+    });
 
-    if (atRiskItems.length === 0) {
+    return {
+      rawList,
+      mappedItems: mapped.sort((a, b) => a.daysLeft - b.daysLeft),
+    };
+  }, [fridgeItems, currentUser.id, itemIds]);
+
+  const { rawList, mappedItems } = selectedItemsData;
+
+  const loadRecipes = useCallback(async () => {
+    if (rawList.length === 0) {
       setSoloRecipes([]);
       setIsLoadingRecipes(false);
       return;
     }
 
-    const loadRecipes = async () => {
-      setIsLoadingRecipes(true);
-      try {
-        const generated = await generateTopSoloRecipes();
-        if (isMounted && generated.length > 0) {
-          setSoloRecipes(generated.slice(0, 4));
-        }
-      } catch {
-        // Ignored
-      } finally {
-        if (isMounted) setIsLoadingRecipes(false);
+    setIsLoadingRecipes(true);
+    try {
+      const generated = await generateTopSoloRecipes(rawList);
+      if (generated && generated.length > 0) {
+        setSoloRecipes(generated.slice(0, 5));
       }
-    };
+    } catch {
+      // Handled gracefully
+    } finally {
+      setIsLoadingRecipes(false);
+    }
+  }, [rawList, generateTopSoloRecipes]);
 
+  useEffect(() => {
     loadRecipes();
-    return () => {
-      isMounted = false;
-    };
-  }, [atRiskItems.length]);
+  }, [loadRecipes]);
 
-  // Friends check for "Not enough? Invite friends"
+  const toggleDropdownSteps = (recipeId: string) => {
+    setExpandedRecipeIds((prev) =>
+      prev.includes(recipeId)
+        ? prev.filter((id) => id !== recipeId)
+        : [...prev, recipeId]
+    );
+  };
+
+  const handleToggleSave = (recipe: RecipeComposite) => {
+    const isSaved = savedRecipes.some((r) => r.id === recipe.id);
+    if (isSaved) {
+      removeSavedRecipe(recipe.id);
+    } else {
+      saveRecipe(recipe);
+    }
+  };
+
+  // Friends check for Feast Mode
   const mutualFriends = useMemo(() => {
     return friends.filter((f) => f.status === 'accepted');
   }, [friends]);
@@ -100,7 +136,10 @@ export default function RescueScreen() {
     if (mutualFriends.length === 0) {
       setIsFriendReqModalVisible(true);
     } else {
-      router.push('/(tabs)/feasts');
+      router.push({
+        pathname: '/(tabs)/feasts',
+        params: itemIds ? { itemIds } : undefined,
+      });
     }
   };
 
@@ -111,18 +150,22 @@ export default function RescueScreen() {
     });
   };
 
-  const safeBottomPadding = Math.max(insets.bottom, 16) + 30;
+  const safeBottomPadding = Math.max(insets.bottom, 16) + 40;
 
   return (
     <View style={styles.container}>
       {/* Header with Back Arrow */}
-      <View style={styles.headerRow}>
+      <View style={[styles.headerRow, { paddingTop: Math.max(insets.top, 16) + 10 }]}>
         <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
           <Text style={styles.backBtnArrow}>‹</Text>
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Rescue ingredients</Text>
-          <Text style={styles.headerSubtitle}>Won't survive long. Cook these first.</Text>
+          <Text style={styles.headerSubtitle}>
+            {mappedItems.length > 0
+              ? `Creating meals from ${mappedItems.length} selected ${mappedItems.length === 1 ? 'item' : 'items'}`
+              : 'Cook expiring groceries before they spoil'}
+          </Text>
         </View>
       </View>
 
@@ -130,7 +173,7 @@ export default function RescueScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: safeBottomPadding }]}
         showsVerticalScrollIndicator={false}
       >
-        {atRiskItems.length === 0 ? (
+        {mappedItems.length === 0 ? (
           <View style={styles.emptyRescueWrap}>
             <StickerCard
               backgroundColor={Colors.paper}
@@ -139,9 +182,9 @@ export default function RescueScreen() {
               style={styles.emptyRescueCard}
             >
               <FoodCharacter foodKey="can" mood="happy" size={88} animate={true} />
-              <Text style={styles.emptyRescueTitle}>No ingredients need rescuing!</Text>
+              <Text style={styles.emptyRescueTitle}>No ingredients selected!</Text>
               <Text style={styles.emptyRescueSub}>
-                Everything in your fridge is fresh and has plenty of shelf-life left.
+                Head back to your shelf, hold any ingredient to select it, and tap Rescue.
               </Text>
               <View style={styles.emptyRescueActionWrap}>
                 <StickerButton
@@ -155,25 +198,30 @@ export default function RescueScreen() {
           </View>
         ) : (
           <>
-            {/* Urgent Ingredients Carousel */}
+            {/* SECTION 1: Selected Items */}
+            <View style={styles.sectionHeaderWrap}>
+              <Text style={styles.sectionHeading}>Selected items</Text>
+              <Text style={styles.sectionSubCount}>({mappedItems.length})</Text>
+            </View>
+
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.carouselContainer}
             >
-              {atRiskItems.map((item) => (
+              {mappedItems.map((item) => (
                 <View key={item.id} style={styles.carouselCardWrapper}>
                   <StickerCard
                     backgroundColor={Colors.paper}
-                    shadowOffset={4}
-                    borderRadius={22}
+                    shadowOffset={3}
+                    borderRadius={20}
                     style={styles.carouselCard}
                   >
                     <FoodCharacter
                       foodKey={item.characterKey}
                       category={item.foodCategory}
                       daysLeft={item.daysLeft}
-                      size={72}
+                      size={64}
                       animate={true}
                     />
                     <Text style={styles.carouselFoodName} numberOfLines={1}>
@@ -189,24 +237,35 @@ export default function RescueScreen() {
               ))}
             </ScrollView>
 
-            {/* SECTION: Recipes that save them */}
+            {/* SECTION 2: Top 5 Recipes */}
             <View style={styles.recipesSection}>
-              <Text style={styles.recipesSectionHeading}>Recipes that save them</Text>
+              <View style={styles.recipesHeaderRow}>
+                <Text style={styles.recipesSectionHeading}>Top 5 rescue recipes</Text>
+              </View>
 
-              {isLoadingRecipes && soloRecipes.length === 0 ? (
+              {isLoadingRecipes ? (
                 <View style={styles.loadingBox}>
-                  <ActivityIndicator size="small" color={Colors.terracotta} />
-                  <Text style={styles.loadingText}>Finding best rescue recipes...</Text>
+                  <ActivityIndicator size="large" color={Colors.terracotta} />
+                  <Text style={styles.loadingText}>Crafting top 5 rescue recipes with AI...</Text>
                 </View>
               ) : soloRecipes.length === 0 ? (
                 <View style={styles.emptyBox}>
-                  <Text style={styles.emptyTitle}>No at-risk recipes needed!</Text>
-                  <Text style={styles.emptySub}>All ingredients on your shelf have plenty of time left.</Text>
+                  <Text style={styles.emptyTitle}>Could not load recipes</Text>
+                  <Text style={styles.emptySub}>Please tap regenerate below to try again.</Text>
                 </View>
               ) : (
                 <View style={styles.recipeCardsStack}>
-                  {soloRecipes.map((recipe) => {
-                    const dollarsSaved = Math.round(recipe.projectedImpact.dollarsSaved || 8);
+                  {soloRecipes.map((recipe, index) => {
+                    const dollarsSaved = Math.round(
+                      recipe.projectedImpact?.dollarsSaved || 9
+                    );
+                    const isExpanded = expandedRecipeIds.includes(recipe.id);
+                    const isSaved = savedRecipes.some((r) => r.id === recipe.id);
+
+                    const ingredientsUsed =
+                      recipe.focusExpiringItems && recipe.focusExpiringItems.length > 0
+                        ? recipe.focusExpiringItems
+                        : recipe.ingredients?.map((i) => i.item_name) || [];
 
                     return (
                       <StickerCard
@@ -216,26 +275,102 @@ export default function RescueScreen() {
                         borderRadius={22}
                         style={styles.recipeCard}
                       >
-                        <Text style={styles.recipeTitle}>{recipe.title}</Text>
-
-                        {/* Rescued ingredient pills */}
-                        <View style={styles.ingredientChipsRow}>
-                          {recipe.focusExpiringItems.map((food, fIdx) => (
-                            <View key={fIdx} style={styles.ingredientChip}>
-                              <Text style={styles.ingredientChipText}>{food}</Text>
-                            </View>
-                          ))}
+                        {/* Rank Badge & Title */}
+                        <View style={styles.recipeCardHeader}>
+                          <View style={styles.rankBadge}>
+                            <Text style={styles.rankBadgeText}>#{index + 1}</Text>
+                          </View>
+                          <Text style={styles.recipeTitle}>{recipe.title}</Text>
                         </View>
 
-                        {/* Meta row and Cook this button */}
-                        <View style={styles.cardFooterRow}>
-                          <Text style={styles.recipeMetaText}>
-                            {recipe.cookTime || '35 min'} · saves about ${dollarsSaved}
-                          </Text>
+                        {/* Meta Tags: Time Needed & Money Saved */}
+                        <View style={styles.metaRow}>
+                          <View style={styles.metaPill}>
+                            <Text style={styles.metaPillText}>
+                              ⏱️ {recipe.cookTime || '25 mins'}
+                            </Text>
+                          </View>
+                          <View style={[styles.metaPill, styles.savingsPill]}>
+                            <Text style={[styles.metaPillText, styles.savingsPillText]}>
+                              💰 Saves ${dollarsSaved}
+                            </Text>
+                          </View>
+                        </View>
 
-                          <View style={{ width: 120 }}>
+                        {/* Ingredients Used Chips */}
+                        <View style={styles.ingredientsSection}>
+                          <Text style={styles.ingredientsLabel}>Ingredients used:</Text>
+                          <View style={styles.ingredientChipsRow}>
+                            {ingredientsUsed.map((food, fIdx) => (
+                              <View key={fIdx} style={styles.ingredientChip}>
+                                <Text style={styles.ingredientChipText}>{food}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        </View>
+
+                        {/* Dropdown Menu for Cooking Steps */}
+                        <Pressable
+                          style={styles.stepsDropdownButton}
+                          onPress={() => toggleDropdownSteps(recipe.id)}
+                        >
+                          <Text style={styles.stepsDropdownText}>
+                            {isExpanded ? 'Hide cooking steps ▴' : 'View cooking steps ▾'}
+                          </Text>
+                          <Text style={styles.stepsCountBadge}>
+                            {recipe.cookingTasks?.length || 3} steps
+                          </Text>
+                        </Pressable>
+
+                        {/* Expanded Cooking Steps Content */}
+                        {isExpanded && (
+                          <View style={styles.expandedStepsContainer}>
+                            {recipe.cookingTasks && recipe.cookingTasks.length > 0 ? (
+                              recipe.cookingTasks.map((task, sIdx) => (
+                                <View key={task.id || sIdx} style={styles.stepItemRow}>
+                                  <View style={styles.stepNumberBadge}>
+                                    <Text style={styles.stepNumberText}>{task.step_number || sIdx + 1}</Text>
+                                  </View>
+                                  <Text style={styles.stepInstructionText}>
+                                    {task.instruction}
+                                  </Text>
+                                </View>
+                              ))
+                            ) : (
+                              <View style={styles.stepItemRow}>
+                                <View style={styles.stepNumberBadge}>
+                                  <Text style={styles.stepNumberText}>1</Text>
+                                </View>
+                                <Text style={styles.stepInstructionText}>
+                                  Combine ingredients in a pan with oil and season to taste. Cook until fragrant and thoroughly heated!
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        )}
+
+                        {/* Action Buttons: Save Recipe & Cook Now */}
+                        <View style={styles.recipeActionsRow}>
+                          <Pressable
+                            style={[
+                              styles.saveRecipeBtn,
+                              isSaved && styles.saveRecipeBtnSaved,
+                            ]}
+                            onPress={() => handleToggleSave(recipe)}
+                          >
+                            <Text
+                              style={[
+                                styles.saveRecipeBtnText,
+                                isSaved && styles.saveRecipeBtnTextSaved,
+                              ]}
+                            >
+                              {isSaved ? '✓ Saved to Meals' : '💾 Save this recipe'}
+                            </Text>
+                          </Pressable>
+
+                          <View style={{ flex: 1 }}>
                             <StickerButton
-                              title="Cook this"
+                              title="Cook now 👩‍🍳"
                               onPress={() => handleCookThis(recipe)}
                               variant="primary"
                               size="medium"
@@ -249,10 +384,18 @@ export default function RescueScreen() {
               )}
             </View>
 
-            {/* Bottom CTA: Not enough? Invite friends */}
-            <View style={styles.bottomCtaWrap}>
+            {/* Bottom Actions: Regenerate Top 5 & Invite Friends */}
+            <View style={styles.bottomButtonsWrap}>
               <StickerButton
-                title="Not enough? Invite friends"
+                title={isLoadingRecipes ? "Regenerating recipes..." : "Regenerate top 5 new recipes 🔄"}
+                onPress={loadRecipes}
+                disabled={isLoadingRecipes}
+                variant="primary"
+                size="large"
+              />
+
+              <StickerButton
+                title="Turn into a Feast with friends 🎉"
                 onPress={handleInviteFriendsPress}
                 variant="secondary"
                 size="large"
@@ -262,7 +405,6 @@ export default function RescueScreen() {
         )}
       </ScrollView>
 
-      {/* Feast Friend Requirement Modal */}
       <FeastFriendRequirementModal
         visible={isFriendReqModalVisible}
         onClose={() => setIsFriendReqModalVisible(false)}
@@ -283,15 +425,18 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 54,
     paddingHorizontal: 16,
-    paddingBottom: 16,
+    paddingBottom: 14,
+    borderBottomWidth: 2,
+    borderBottomColor: Colors.ink,
+    backgroundColor: Colors.cream,
   },
   backBtn: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 8,
   },
   backBtnArrow: {
     fontFamily: Fonts.headingSemiBold,
@@ -301,18 +446,18 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontFamily: Fonts.headingBold,
-    fontSize: 24,
+    fontSize: 22,
     color: Colors.ink,
   },
   headerSubtitle: {
     fontFamily: Fonts.bodySemiBold,
-    fontSize: 14,
+    fontSize: 13,
     color: '#76665A',
     marginTop: 2,
   },
   content: {
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 16,
   },
   emptyRescueWrap: {
     paddingTop: 20,
@@ -341,6 +486,22 @@ const styles = StyleSheet.create({
     width: '100%',
     marginTop: 10,
   },
+  sectionHeaderWrap: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+    marginBottom: 12,
+  },
+  sectionHeading: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 18,
+    color: Colors.ink,
+  },
+  sectionSubCount: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 14,
+    color: Colors.terracotta,
+  },
   carouselContainer: {
     paddingRight: 16,
     gap: 12,
@@ -350,34 +511,44 @@ const styles = StyleSheet.create({
     width: 110,
   },
   carouselCard: {
-    padding: 12,
+    padding: 10,
     alignItems: 'center',
     gap: 6,
   },
   carouselFoodName: {
     fontFamily: Fonts.headingSemiBold,
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.ink,
     textAlign: 'center',
   },
   recipesSection: {
     marginBottom: 24,
   },
+  recipesHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
   recipesSectionHeading: {
     fontFamily: Fonts.headingBold,
     fontSize: 20,
     color: Colors.ink,
-    marginBottom: 14,
   },
   loadingBox: {
-    padding: 24,
+    padding: 36,
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
+    backgroundColor: Colors.paper,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: Colors.ink,
   },
   loadingText: {
     fontFamily: Fonts.bodySemiBold,
     fontSize: 14,
     color: '#76665A',
+    textAlign: 'center',
   },
   emptyBox: {
     padding: 24,
@@ -400,48 +571,176 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   recipeCardsStack: {
-    gap: 16,
+    gap: 18,
   },
   recipeCard: {
-    padding: 18,
+    padding: 16,
+  },
+  recipeCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 8,
+  },
+  rankBadge: {
+    backgroundColor: Colors.terracotta,
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderWidth: 1.5,
+    borderColor: Colors.ink,
+  },
+  rankBadgeText: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 12,
+    color: '#FFF',
   },
   recipeTitle: {
+    flex: 1,
     fontFamily: Fonts.headingBold,
-    fontSize: 19,
+    fontSize: 18,
     color: Colors.ink,
-    marginBottom: 10,
+    lineHeight: 23,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  metaPill: {
+    backgroundColor: '#F2ECE4',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: Colors.ink,
+  },
+  metaPillText: {
+    fontFamily: Fonts.bodyBold,
+    fontSize: 12,
+    color: Colors.ink,
+  },
+  savingsPill: {
+    backgroundColor: '#E8F5E9',
+    borderColor: '#2E7D32',
+  },
+  savingsPillText: {
+    color: '#2E7D32',
+  },
+  ingredientsSection: {
+    marginBottom: 12,
+  },
+  ingredientsLabel: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 12,
+    color: '#8A776A',
+    marginBottom: 6,
   },
   ingredientChipsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
+    gap: 6,
   },
   ingredientChip: {
-    backgroundColor: '#F8E3A9',
+    backgroundColor: '#FFF2EB',
     borderWidth: 1.5,
     borderColor: Colors.ink,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingVertical: 3,
-    paddingHorizontal: 10,
+    paddingHorizontal: 9,
   },
   ingredientChipText: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 12,
+    color: Colors.ink,
+  },
+  stepsDropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F5EEE6',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.ink,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  stepsDropdownText: {
     fontFamily: Fonts.headingSemiBold,
     fontSize: 13,
     color: Colors.ink,
   },
-  cardFooterRow: {
+  stepsCountBadge: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 11,
+    color: '#8A776A',
+  },
+  expandedStepsContainer: {
+    backgroundColor: '#FFFDF9',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E6DACF',
+    padding: 12,
+    marginBottom: 14,
+    gap: 10,
+  },
+  stepItemRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  stepNumberBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: Colors.terracotta,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
   },
-  recipeMetaText: {
-    fontFamily: Fonts.bodyBold,
-    fontSize: 14,
-    color: '#655142',
+  stepNumberText: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 11,
+    color: '#FFF',
   },
-  bottomCtaWrap: {
+  stepInstructionText: {
+    flex: 1,
+    fontFamily: Fonts.bodyRegular,
+    fontSize: 13,
+    color: Colors.ink,
+    lineHeight: 18,
+  },
+  recipeActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  saveRecipeBtn: {
+    backgroundColor: Colors.paper,
+    borderWidth: 2,
+    borderColor: Colors.ink,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveRecipeBtnSaved: {
+    backgroundColor: '#E8F5E9',
+    borderColor: '#2E7D32',
+  },
+  saveRecipeBtnText: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 13,
+    color: Colors.ink,
+  },
+  saveRecipeBtnTextSaved: {
+    color: '#2E7D32',
+  },
+  bottomButtonsWrap: {
+    gap: 12,
     marginTop: 8,
-    marginBottom: 16,
+    marginBottom: 20,
   },
 });

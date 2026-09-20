@@ -43,7 +43,19 @@ export default function TabLayout() {
         }}
       />
 
-      {/* Tab 2: Feast */}
+      {/* Tab 2: Meals */}
+      <Tabs.Screen
+        name="meals"
+        options={{
+          title: 'Meals',
+          tabBarLabel: 'Meals',
+          tabBarIcon: ({ color, focused }) => (
+            <Text style={{ fontSize: 20, color }}>{focused ? '🍳' : '🍽️'}</Text>
+          ),
+        }}
+      />
+
+      {/* Tab 3: Feast */}
       <Tabs.Screen
         name="feasts"
         options={{
