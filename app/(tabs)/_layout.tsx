@@ -1,13 +1,14 @@
-import { Tabs } from 'expo-router';
-import { Text, Platform, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Fonts } from '../../constants/Theme';
+import { Tabs } from "expo-router";
+import { Platform, Text } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Colors, Fonts } from "../../constants/Theme";
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
 
   // Android edge-to-edge system navigation bar safe area handling
-  const bottomPadding = insets.bottom > 0 ? insets.bottom : Platform.OS === 'android' ? 12 : 8;
+  const bottomPadding =
+    insets.bottom > 0 ? insets.bottom : Platform.OS === "android" ? 12 : 8;
   const tabHeight = 64 + bottomPadding;
 
   return (
@@ -15,7 +16,7 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false, // Handover screens provide their own custom header layouts
         tabBarActiveTintColor: Colors.terracotta,
-        tabBarInactiveTintColor: '#8A776A',
+        tabBarInactiveTintColor: "#8A776A",
         tabBarLabelStyle: {
           fontFamily: Fonts.headingSemiBold,
           fontSize: 12,
@@ -31,14 +32,14 @@ export default function TabLayout() {
         },
       }}
     >
-      {/* Tab 1: Shelf */}
+      {/* Tab 1: Fridge */}
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Shelf',
-          tabBarLabel: 'Shelf',
+          title: "Fridge",
+          tabBarLabel: "Fridge",
           tabBarIcon: ({ color, focused }) => (
-            <Text style={{ fontSize: 20, color }}>{focused ? '🏠' : '🛖'}</Text>
+            <Text style={{ fontSize: 20, color }}>{focused ? "🏠" : "🛖"}</Text>
           ),
         }}
       />
@@ -47,10 +48,10 @@ export default function TabLayout() {
       <Tabs.Screen
         name="meals"
         options={{
-          title: 'Meals',
-          tabBarLabel: 'Meals',
+          title: "Meals",
+          tabBarLabel: "Meals",
           tabBarIcon: ({ color, focused }) => (
-            <Text style={{ fontSize: 20, color }}>{focused ? '🍳' : '🍽️'}</Text>
+            <Text style={{ fontSize: 20, color }}>{focused ? "🍳" : "🍽️"}</Text>
           ),
         }}
       />
@@ -59,10 +60,10 @@ export default function TabLayout() {
       <Tabs.Screen
         name="social"
         options={{
-          title: 'Friends',
-          tabBarLabel: 'Friends',
+          title: "Friends",
+          tabBarLabel: "Friends",
           tabBarIcon: ({ color, focused }) => (
-            <Text style={{ fontSize: 20, color }}>{focused ? '👥' : '👤'}</Text>
+            <Text style={{ fontSize: 20, color }}>{focused ? "👥" : "👤"}</Text>
           ),
         }}
       />
@@ -71,10 +72,10 @@ export default function TabLayout() {
       <Tabs.Screen
         name="insights"
         options={{
-          title: 'You',
-          tabBarLabel: 'You',
+          title: "You",
+          tabBarLabel: "You",
           tabBarIcon: ({ color, focused }) => (
-            <Text style={{ fontSize: 20, color }}>{focused ? '🧑‍🍳' : '📊'}</Text>
+            <Text style={{ fontSize: 20, color }}>{focused ? "🧑‍🍳" : "📊"}</Text>
           ),
         }}
       />
