@@ -219,39 +219,48 @@ const TAYLOR_ID = OBI_ID;
 const initialCurrentUser: ProfileRow = {
   id: CURRENT_USER_ID,
   email: 'sam@grocerydemo.dev',
-  username: 'sam_perera',
+  username: 'sam',
   display_name: 'Sam Perera',
   avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
-  created_at: new Date(Date.now() - 60 * 24 * 36e5).toISOString(),
+  created_at: '2026-09-20T00:32:01.960584Z',
 };
 
 const initialFriends: FriendEntry[] = [
   {
     id: NADIA_ID,
     email: 'nadia@grocerydemo.dev',
-    username: 'nadia_khan',
+    username: 'nadia',
     display_name: 'Nadia Khan',
     avatar_url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100',
-    created_at: new Date(Date.now() - 50 * 24 * 36e5).toISOString(),
+    created_at: '2026-09-20T00:32:01.960830Z',
     status: 'accepted',
   },
   {
     id: THEO_ID,
     email: 'theo@grocerydemo.dev',
-    username: 'theo_alvarez',
+    username: 'theo',
     display_name: 'Theo Alvarez',
     avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100',
-    created_at: new Date(Date.now() - 40 * 24 * 36e5).toISOString(),
+    created_at: '2026-09-20T00:32:01.960898Z',
     status: 'accepted',
   },
   {
     id: OBI_ID,
     email: 'obi@grocerydemo.dev',
-    username: 'obi_nwachukwu',
+    username: 'obi',
     display_name: 'Obi Nwachukwu',
     avatar_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100',
-    created_at: new Date(Date.now() - 30 * 24 * 36e5).toISOString(),
-    status: 'pending',
+    created_at: '2026-09-20T00:32:01.961003Z',
+    status: 'accepted',
+  },
+  {
+    id: '27',
+    email: 'pantry.pal@grocerydemo.dev',
+    username: 'pantry.pal',
+    display_name: 'Pantry Pal',
+    avatar_url: 'https://ui-avatars.com/api/?name=Pantry%20Pal&background=10B981&color=fff',
+    created_at: '2026-09-20T20:07:07.948911Z',
+    status: 'accepted',
   },
 ];
 
@@ -999,12 +1008,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setBackendError(null);
 
       // 1. Fetch available users from live database
-      const users = await backendApi.getUsers(20);
+      const users = await backendApi.getUsers(50);
       setAvailableBackendUsers(users);
 
       // 2. Bind current user profile from live database
-      const samUser = users.find(
+      const defaultBackendUser = users.find(
         (u) =>
+          u.id === Number(CURRENT_USER_ID) ||
           (u.username && u.username.toLowerCase() === 'sam') ||
           (u.name && u.name.toLowerCase().includes('sam'))
       );
@@ -1012,11 +1022,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ? targetUserId
         : (activeBackendUserId && users.some((u) => u.id === activeBackendUserId)
             ? activeBackendUserId
-            : samUser?.id || users[0]?.id || 19);
+            : defaultBackendUser?.id || Number(CURRENT_USER_ID));
 
       setActiveBackendUserId(effectiveUserId);
 
-      const foundUser = users.find((u) => u.id === effectiveUserId) || users[0];
+      let foundUser = users.find((u) => u.id === effectiveUserId);
+      if (!foundUser && effectiveUserId) {
+        try {
+          foundUser = await backendApi.getUser(effectiveUserId);
+        } catch (fetchErr) {
+          console.warn(`Could not fetch specific user ${effectiveUserId}:`, fetchErr);
+        }
+      }
+
       let userProfile = initialCurrentUser;
       if (foundUser) {
         userProfile = toFrontendProfile(foundUser);
