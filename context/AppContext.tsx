@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useMemo, useEffect, useRef, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useMemo, useEffect, useRef, useCallback, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../services/supabase/client';
@@ -1639,22 +1639,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return recipe.id;
   };
 
-  const generateTopSoloRecipes = async (
-    items?: FridgeItemRow[]
-  ): Promise<RecipeComposite[]> => {
-    let itemsToUse = items;
-    if (!itemsToUse || itemsToUse.length === 0) {
-      const expiring = getUserExpiringItems(72);
-      itemsToUse =
-        expiring.length > 0
-          ? expiring
-          : fridgeItems.filter((i) => i.user_id === currentUser.id).slice(0, 4);
-    }
+  const generateTopSoloRecipes = useCallback(
+    async (items?: FridgeItemRow[]): Promise<RecipeComposite[]> => {
+      let itemsToUse = items;
+      if (!itemsToUse || itemsToUse.length === 0) {
+        const expiring = getUserExpiringItems(72);
+        itemsToUse =
+          expiring.length > 0
+            ? expiring
+            : fridgeItems.filter((i) => i.user_id === currentUser.id).slice(0, 4);
+      }
 
-    const generated = await llmGenerateTopSoloRecipes(itemsToUse, currentUser);
-    setRecipes((prev) => [...generated, ...prev]);
-    return generated;
-  };
+      const generated = await llmGenerateTopSoloRecipes(itemsToUse, currentUser);
+      setRecipes((prev) => [...generated, ...prev]);
+      return generated;
+    },
+    [currentUser, fridgeItems, getUserExpiringItems]
+  );
 
   const generateTopDinnerPartyRecipes = async (
     partyName: string,

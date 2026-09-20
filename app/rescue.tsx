@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,6 @@ import StickerCard from '../components/ui/StickerCard';
 import StickerButton from '../components/ui/StickerButton';
 import StatusChip from '../components/ui/StatusChip';
 import FoodCharacter from '../components/FoodCharacter';
-import FeastFriendRequirementModal from '../components/FeastFriendRequirementModal';
 import {
   lookupFoodCharacter,
   getDaysLeft,
@@ -30,7 +29,6 @@ export default function RescueScreen() {
   const { itemIds } = useLocalSearchParams<{ itemIds?: string }>();
   const {
     currentUser,
-    friends,
     fridgeItems,
     generateTopSoloRecipes,
     savedRecipes,
@@ -40,7 +38,6 @@ export default function RescueScreen() {
 
   const [isLoadingRecipes, setIsLoadingRecipes] = useState(false);
   const [soloRecipes, setSoloRecipes] = useState<RecipeComposite[]>([]);
-  const [isFriendReqModalVisible, setIsFriendReqModalVisible] = useState(false);
   const [expandedRecipeIds, setExpandedRecipeIds] = useState<string[]>([]);
 
   // Selected items from route params or fallback to user at-risk items
@@ -85,9 +82,12 @@ export default function RescueScreen() {
   }, [fridgeItems, currentUser.id, itemIds]);
 
   const { rawList, mappedItems } = selectedItemsData;
+  const rawListRef = useRef(rawList);
+  rawListRef.current = rawList;
 
   const loadRecipes = useCallback(async () => {
-    if (rawList.length === 0) {
+    const items = rawListRef.current;
+    if (!items || items.length === 0) {
       setSoloRecipes([]);
       setIsLoadingRecipes(false);
       return;
@@ -95,7 +95,7 @@ export default function RescueScreen() {
 
     setIsLoadingRecipes(true);
     try {
-      const generated = await generateTopSoloRecipes(rawList);
+      const generated = await generateTopSoloRecipes(items);
       if (generated && generated.length > 0) {
         setSoloRecipes(generated.slice(0, 5));
       }
@@ -104,11 +104,11 @@ export default function RescueScreen() {
     } finally {
       setIsLoadingRecipes(false);
     }
-  }, [rawList, generateTopSoloRecipes]);
+  }, [generateTopSoloRecipes]);
 
   useEffect(() => {
     loadRecipes();
-  }, [loadRecipes]);
+  }, [itemIds]);
 
   const toggleDropdownSteps = (recipeId: string) => {
     setExpandedRecipeIds((prev) =>
@@ -124,22 +124,6 @@ export default function RescueScreen() {
       removeSavedRecipe(recipe.id);
     } else {
       saveRecipe(recipe);
-    }
-  };
-
-  // Friends check for Feast Mode
-  const mutualFriends = useMemo(() => {
-    return friends.filter((f) => f.status === 'accepted');
-  }, [friends]);
-
-  const handleInviteFriendsPress = () => {
-    if (mutualFriends.length === 0) {
-      setIsFriendReqModalVisible(true);
-    } else {
-      router.push({
-        pathname: '/(tabs)/feasts',
-        params: itemIds ? { itemIds } : undefined,
-      });
     }
   };
 
@@ -384,7 +368,7 @@ export default function RescueScreen() {
               )}
             </View>
 
-            {/* Bottom Actions: Regenerate Top 5 & Invite Friends */}
+            {/* Bottom Actions: Regenerate Top 5 */}
             <View style={styles.bottomButtonsWrap}>
               <StickerButton
                 title={isLoadingRecipes ? "Regenerating recipes..." : "Regenerate top 5 new recipes 🔄"}
@@ -393,26 +377,10 @@ export default function RescueScreen() {
                 variant="primary"
                 size="large"
               />
-
-              <StickerButton
-                title="Turn into a Feast with friends 🎉"
-                onPress={handleInviteFriendsPress}
-                variant="secondary"
-                size="large"
-              />
             </View>
           </>
         )}
       </ScrollView>
-
-      <FeastFriendRequirementModal
-        visible={isFriendReqModalVisible}
-        onClose={() => setIsFriendReqModalVisible(false)}
-        onAddFriend={() => {
-          setIsFriendReqModalVisible(false);
-          router.push('/(tabs)/insights');
-        }}
-      />
     </View>
   );
 }
