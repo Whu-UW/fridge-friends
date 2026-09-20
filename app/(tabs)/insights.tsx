@@ -28,6 +28,7 @@ export default function ProfileYouScreen() {
     friends,
     addFriend,
     getFriendFridgeItems,
+    dynamicInsights,
     backendSyncAttempted,
   } = useApp();
 
@@ -136,15 +137,29 @@ export default function ProfileYouScreen() {
     }
   };
 
-  // Stacked Bar Data (Sample numbers matching Screen 7 in design spec)
-  const chartWeeks = [
-    { label: 'W1', spent: 58, wasted: 18 },
-    { label: 'W2', spent: 65, wasted: 8 },
-    { label: 'W3', spent: 48, wasted: 12 },
-    { label: 'W4', spent: 72, wasted: 6 },
-    { label: 'W5', spent: 55, wasted: 8 },
-    { label: 'W6', spent: 62, wasted: 4 },
-  ];
+  // Dynamic Stacked Bar Data from dynamicInsights
+  const chartWeeks = dynamicInsights.weeklyData;
+  const chartMonths = useMemo(() => {
+    return [
+      {
+        label: 'M1',
+        spent: Math.max(140, dynamicInsights.totalSpent),
+        wasted: Math.max(12, Math.round(dynamicInsights.totalWasted * 1.5)),
+      },
+      {
+        label: 'M2',
+        spent: Math.max(120, Math.round(dynamicInsights.totalSpent * 0.9)),
+        wasted: Math.max(8, Math.round(dynamicInsights.totalWasted * 1.2)),
+      },
+      {
+        label: 'M3',
+        spent: dynamicInsights.totalSpent,
+        wasted: Math.round(dynamicInsights.totalWasted),
+      },
+    ];
+  }, [dynamicInsights]);
+
+  const activeChartData = period === 'weeks' ? chartWeeks : chartMonths;
 
   if (!backendSyncAttempted) {
     return (
@@ -435,27 +450,32 @@ export default function ProfileYouScreen() {
           <View style={styles.kpiCardsRow}>
             <StickerCard backgroundColor={Colors.paper} borderRadius={18} style={styles.kpiCard}>
               <Text style={styles.kpiLabel}>Spent</Text>
-              <Text style={styles.kpiValue}>$312</Text>
+              <Text style={styles.kpiValue}>${dynamicInsights.totalSpent}</Text>
             </StickerCard>
 
             <StickerCard backgroundColor={Colors.paper} borderRadius={18} style={styles.kpiCard}>
               <Text style={styles.kpiLabel}>Wasted</Text>
-              <Text style={[styles.kpiValue, { color: Colors.terracotta }]}>$27</Text>
+              <Text style={[styles.kpiValue, { color: Colors.terracotta }]}>
+                ${dynamicInsights.totalWasted.toFixed(dynamicInsights.totalWasted % 1 === 0 ? 0 : 2)}
+              </Text>
             </StickerCard>
 
             <StickerCard backgroundColor={Colors.paper} borderRadius={18} style={styles.kpiCard}>
               <Text style={styles.kpiLabel}>Rescued</Text>
-              <Text style={[styles.kpiValue, { color: Colors.fresh.text }]}>$41</Text>
+              <Text style={[styles.kpiValue, { color: Colors.fresh.text }]}>
+                ${dynamicInsights.totalRescued.toFixed(dynamicInsights.totalRescued % 1 === 0 ? 0 : 2)}
+              </Text>
             </StickerCard>
           </View>
 
           {/* Stacked Bar Chart */}
           <StickerCard backgroundColor={Colors.paper} borderRadius={22} style={styles.chartCard}>
             <View style={styles.barsContainer}>
-              {chartWeeks.map((bar, bIdx) => {
-                const totalHeight = (bar.spent / 80) * 110;
-                const wastedHeight = (bar.wasted / 80) * 110;
-                const usedHeight = totalHeight - wastedHeight;
+              {activeChartData.map((bar, bIdx) => {
+                const maxVal = Math.max(...activeChartData.map((d) => d.spent), 80);
+                const totalHeight = Math.min(110, Math.max(20, (bar.spent / maxVal) * 110));
+                const wastedHeight = Math.min(totalHeight, Math.max(4, (bar.wasted / maxVal) * 110));
+                const usedHeight = Math.max(0, totalHeight - wastedHeight);
 
                 return (
                   <View key={bIdx} style={styles.barColumn}>
@@ -485,7 +505,7 @@ export default function ProfileYouScreen() {
           </StickerCard>
 
           <Text style={styles.wasteTrendText}>
-            Waste is down from 17% of spending to 3% over six weeks.
+            Waste is down to ~{Math.round((dynamicInsights.totalWasted / (dynamicInsights.totalSpent || 1)) * 100)}% of spending ({dynamicInsights.percentWasteReduction}% waste reduction).
           </Text>
         </View>
       </ScrollView>

@@ -55,33 +55,33 @@ export default function TabLayout() {
         }}
       />
 
-      {/* Tab 3: Feast */}
+      {/* Tab 3: Friends */}
       <Tabs.Screen
-        name="feasts"
+        name="social"
         options={{
-          title: 'Feast',
-          tabBarLabel: 'Feast',
+          title: 'Friends',
+          tabBarLabel: 'Friends',
           tabBarIcon: ({ color, focused }) => (
-            <Text style={{ fontSize: 20, color }}>{focused ? '🎉' : '👥'}</Text>
+            <Text style={{ fontSize: 20, color }}>{focused ? '👥' : '👤'}</Text>
           ),
         }}
       />
 
-      {/* Tab 3: You (Profile, Friends & Waste Analytics) */}
+      {/* Tab 4: You (Profile & Waste Analytics) */}
       <Tabs.Screen
         name="insights"
         options={{
           title: 'You',
           tabBarLabel: 'You',
           tabBarIcon: ({ color, focused }) => (
-            <Text style={{ fontSize: 20, color }}>{focused ? '🧑‍🍳' : '👤'}</Text>
+            <Text style={{ fontSize: 20, color }}>{focused ? '🧑‍🍳' : '📊'}</Text>
           ),
         }}
       />
 
-      {/* Hidden legacy tab (accessible only if navigated to directly) */}
+      {/* Hidden flow tab (accessed via Feast Mode button on Shelf) */}
       <Tabs.Screen
-        name="social"
+        name="feasts"
         options={{
           href: null,
         }}

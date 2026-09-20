@@ -58,17 +58,10 @@ export default function RescuedCelebrationModal({
 }: RescuedCelebrationModalProps) {
   const router = useRouter();
 
-  const handleShareWin = async () => {
-    try {
-      await Share.share({
-        message: isFeast
-          ? `We just saved ${itemsSavedCount} groceries together with Fridge Friends! 🎉`
-          : `I just rescued ${ingredientNames.join(', ')} and saved $${dollarsSaved.toFixed(2)} with Fridge Friends! 🍳🌱`,
-      });
-    } catch {
-      // Ignored
-    }
-  };
+  const charactersToRender =
+    ingredientNames && ingredientNames.length > 0
+      ? ingredientNames.slice(0, 3)
+      : ['Baby Spinach', 'Heavy Cream', 'Bell Pepper'];
 
   const formattedFoodList =
     ingredientNames.length > 0
@@ -111,7 +104,7 @@ export default function RescuedCelebrationModal({
 
           {/* Hopping Joyful Characters */}
           <View style={styles.charactersRow}>
-            {ingredientNames.slice(0, 3).map((food, idx) => (
+            {charactersToRender.map((food, idx) => (
               <FoodCharacter
                 key={idx}
                 name={food}
@@ -145,19 +138,12 @@ export default function RescuedCelebrationModal({
               </Text>
             </View>
 
-            {/* Buttons */}
+            {/* Buttons - Only Back to Shelf */}
             <View style={styles.buttonStack}>
               <StickerButton
-                title="Back to my shelf"
+                title="Back to shelf"
                 onPress={onDone}
                 variant="primary"
-                size="large"
-              />
-
-              <StickerButton
-                title={isFeast ? 'Plan the next feast' : 'Share the win'}
-                onPress={isFeast ? onDone : handleShareWin}
-                variant="secondary"
                 size="large"
               />
             </View>

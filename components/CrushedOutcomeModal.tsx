@@ -21,7 +21,7 @@ interface CrushedOutcomeModalProps {
   wastedAmount?: number;
   isFeast?: boolean;
   onClose: () => void;
-  onTryAnother: () => void;
+  onTryAnother?: () => void;
   onBackToShelf: () => void;
 }
 
@@ -164,19 +164,12 @@ export default function CrushedOutcomeModal({
               </Text>
             </View>
 
-            {/* Action Buttons */}
+            {/* Action Buttons - Only Back to Shelf */}
             <View style={styles.buttonStack}>
               <StickerButton
-                title={isFeast ? 'Pick another recipe' : 'Try another recipe'}
-                onPress={onTryAnother}
-                variant="primary"
-                size="large"
-              />
-
-              <StickerButton
-                title="Back to my shelf"
+                title="Back to shelf"
                 onPress={onBackToShelf}
-                variant="secondary"
+                variant="primary"
                 size="large"
               />
             </View>

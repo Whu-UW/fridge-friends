@@ -50,6 +50,31 @@ export interface FeastCandidateRecipe {
   votes: string[]; // array of userIds who voted for this candidate recipe
 }
 
+export interface WasteEvent {
+  id: string;
+  itemId?: string;
+  name: string;
+  price: number;
+  timestamp: string;
+  reason?: 'tossed' | 'cooking_failed' | 'expired' | string;
+}
+
+export interface RescueEvent {
+  id: string;
+  itemNames: string[];
+  dollarsSaved: number;
+  recipeTitle?: string;
+  timestamp: string;
+}
+
+export interface DynamicInsightsData {
+  totalSpent: number;
+  totalWasted: number;
+  totalRescued: number;
+  weeklyData: { label: string; spent: number; wasted: number }[];
+  percentWasteReduction: number;
+}
+
 export interface FeastInvite {
   id: string;
   partyName: string;
@@ -63,11 +88,15 @@ export interface FeastInvite {
   foodRescuedGrams: number;
   dollarsSaved: number;
   invitedFriends: FeastFriendStatus[];
-  status: 'voting' | 'confirmed' | 'completed' | 'cancelled';
+  status: 'voting' | 'confirmed' | 'pending' | 'cooking' | 'completed' | 'cancelled';
   createdAt: string;
   scheduledFor?: string;
   invitationsSent?: number;
   invitationsPending?: number;
+  bringBreakdown?: { who: string; items: string }[];
+  cookingTasks?: { step_number: number; instruction: string }[];
+  userRsvpStatus?: 'accepted' | 'declined' | 'pending' | 'host';
+  outcome?: 'rescued' | 'failed';
 }
 
 interface AppContextType {
@@ -165,6 +194,17 @@ interface AppContextType {
   getRecipe: (id: string) => RecipeComposite | undefined;
   saveRecipe: (recipe: RecipeComposite) => Promise<void>;
   removeSavedRecipe: (id: string) => Promise<void>;
+  wasteEvents: WasteEvent[];
+  rescueEvents: RescueEvent[];
+  dynamicInsights: DynamicInsightsData;
+  tossFridgeItem: (itemId: string, reason?: string) => void;
+  recordRescuedMeal: (itemNames: string[], dollarsSaved: number, title?: string) => void;
+  recordWastedMeal: (itemNames: string[], dollarsWasted: number, title?: string) => void;
+  startFeastCooking: (feastId: string) => void;
+  completeFeast: (feastId: string, outcome: 'rescued' | 'failed') => void;
+  respondToFeastInvite: (feastId: string, response: 'accepted' | 'declined') => void;
+  nudgeFeastFriend: (feastId: string, friendId: string) => string;
+  addCustomFeast: (feast: FeastInvite) => void;
 }
 
 const CURRENT_USER_ID = '14'; // Sam Perera (Default Backend User ID)
@@ -552,8 +592,47 @@ const initialRecipes: RecipeComposite[] = [
 ];
 
 const initialFeasts: FeastInvite[] = [
+  // 1. Incoming feast invitation from Nadia
   {
-    id: 'feast-init-1',
+    id: 'feast-incoming-1',
+    partyName: "Nadia's Friday Feast",
+    hostId: NADIA_ID,
+    hostName: 'Nadia Khan',
+    candidateRecipes: [],
+    recipeId: 'rec-sample-2',
+    recipeTitle: 'Herb-Seared Salmon with Wilted Greens',
+    cookTime: '20 mins',
+    foodRescuedGrams: 750,
+    dollarsSaved: 16.48,
+    invitedFriends: [
+      {
+        id: CURRENT_USER_ID,
+        name: 'Sam Perera',
+        username: 'sam_perera',
+        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
+        status: 'pending',
+      },
+      {
+        id: THEO_ID,
+        name: 'Theo Alvarez',
+        username: 'theo_alvarez',
+        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100',
+        status: 'accepted',
+      },
+    ],
+    status: 'pending',
+    userRsvpStatus: 'pending',
+    scheduledFor: 'Tonight at 7:00 PM',
+    bringBreakdown: [
+      { who: 'Nadia', items: 'Atlantic Salmon, Fresh Basil' },
+      { who: 'You', items: 'Organic Baby Spinach' },
+      { who: 'Theo', items: 'Garlic & Olive Oil' },
+    ],
+    createdAt: new Date(Date.now() - 2 * 36e5).toISOString(),
+  },
+  // 2. Pending feast hosted by current user (waiting for RSVP)
+  {
+    id: 'feast-pending-1',
     partyName: "Sam's Friday Feast Mode",
     hostId: CURRENT_USER_ID,
     hostName: 'Sam Perera',
@@ -567,7 +646,7 @@ const initialFeasts: FeastInvite[] = [
         votes: [THEO_ID],
       },
     ],
-    selectedRecipeId: undefined,
+    selectedRecipeId: initialRecipes[0].id,
     recipeId: initialRecipes[0].id,
     recipeTitle: initialRecipes[0].title,
     cookTime: initialRecipes[0].cookTime,
@@ -589,8 +668,85 @@ const initialFeasts: FeastInvite[] = [
         status: 'pending',
       },
     ],
-    status: 'voting',
+    status: 'pending',
+    userRsvpStatus: 'host',
+    scheduledFor: 'Tomorrow at 6:30 PM',
+    bringBreakdown: [
+      { who: 'You', items: 'Baby Spinach, Chicken Thighs' },
+      { who: 'Nadia', items: 'Bell peppers, Cream' },
+      { who: 'Theo', items: 'Feta cheese, Basil' },
+    ],
     createdAt: new Date(Date.now() - 4 * 36e5).toISOString(),
+  },
+  // 3. Cooking feast (all responded / cooking in progress)
+  {
+    id: 'feast-cooking-1',
+    partyName: 'Weekend Veggie Bake Feast',
+    hostId: CURRENT_USER_ID,
+    hostName: 'Sam Perera',
+    candidateRecipes: [],
+    recipeId: 'rec-feast-cooking',
+    recipeTitle: 'Creamy Veggie Pasta Bake',
+    cookTime: '35 mins',
+    foodRescuedGrams: 850,
+    dollarsSaved: 18.2,
+    invitedFriends: [
+      {
+        id: NADIA_ID,
+        name: 'Nadia Khan',
+        username: 'nadia_khan',
+        avatarUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100',
+        status: 'accepted',
+      },
+      {
+        id: THEO_ID,
+        name: 'Theo Alvarez',
+        username: 'theo_alvarez',
+        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100',
+        status: 'accepted',
+      },
+    ],
+    status: 'cooking',
+    userRsvpStatus: 'host',
+    scheduledFor: 'Tonight at 6:30 PM',
+    bringBreakdown: [
+      { who: 'You', items: 'Heavy Cream, Sourdough' },
+      { who: 'Nadia', items: 'Crimini Mushrooms, Pasta' },
+      { who: 'Theo', items: 'Parmesan, Herbs' },
+    ],
+    cookingTasks: [
+      { step_number: 1, instruction: 'Boil penne pasta in salted water until al dente.' },
+      { step_number: 2, instruction: 'Sauté mushrooms with garlic and fold into heavy cream.' },
+      { step_number: 3, instruction: 'Combine in baking dish, top with parmesan and toast bread crumbs.' },
+    ],
+    createdAt: new Date(Date.now() - 10 * 36e5).toISOString(),
+  },
+  // 4. Completed feast (finished cooking, greyed out)
+  {
+    id: 'feast-comp-1',
+    partyName: 'Zero-Waste Market Skillet Supper',
+    hostId: CURRENT_USER_ID,
+    hostName: 'Sam Perera',
+    candidateRecipes: [],
+    recipeId: 'rec-feast-comp',
+    recipeTitle: 'Zero-Waste Market Skillet',
+    cookTime: '25 mins',
+    foodRescuedGrams: 700,
+    dollarsSaved: 14.5,
+    invitedFriends: [
+      {
+        id: NADIA_ID,
+        name: 'Nadia Khan',
+        username: 'nadia_khan',
+        avatarUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100',
+        status: 'accepted',
+      },
+    ],
+    status: 'completed',
+    outcome: 'rescued',
+    userRsvpStatus: 'host',
+    scheduledFor: 'Last Sunday at 6:00 PM',
+    createdAt: new Date(Date.now() - 5 * dayMs).toISOString(),
   },
 ];
 
@@ -735,24 +891,71 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Start state empty/placeholder so the app loads with the live database backend first
   const [currentUser, setCurrentUser] = useState<ProfileRow>(initialCurrentUser);
   const [friends, setFriends] = useState<FriendEntry[]>([]);
-  const [feasts, setFeasts] = useState<FeastInvite[]>([]);
+  const [feasts, setFeasts] = useState<FeastInvite[]>(initialFeasts);
   const [followingFriendIds, setFollowingFriendIds] = useState<string[]>([]);
   const [circles, setCircles] = useState<CircleComposite[]>([]);
   const [fridgeItems, setFridgeItems] = useState<FridgeItemRow[]>([]);
   const [shoppingTrips, setShoppingTrips] = useState<ShoppingTripRow[]>([]);
   const [recipes, setRecipes] = useState<RecipeComposite[]>([]);
   const [savedRecipes, setSavedRecipes] = useState<RecipeComposite[]>([]);
+  const [wasteEvents, setWasteEvents] = useState<WasteEvent[]>([]);
+  const [rescueEvents, setRescueEvents] = useState<RescueEvent[]>([]);
 
   useEffect(() => {
-    const loadSavedRecipes = async () => {
+    const loadSavedRecipesAndEvents = async () => {
       try {
         const stored = await AsyncStorage.getItem(`user_saved_recipes_${currentUser.id}`);
         if (stored) {
           setSavedRecipes(JSON.parse(stored));
         }
+        const storedWaste = await AsyncStorage.getItem(`user_waste_events_${currentUser.id}`);
+        if (storedWaste) {
+          setWasteEvents(JSON.parse(storedWaste));
+        } else {
+          const seedWaste: WasteEvent[] = [
+            {
+              id: 'w-init-1',
+              name: 'Fresh Cilantro',
+              price: 1.89,
+              timestamp: new Date(Date.now() - 12 * 864e5).toISOString(),
+              reason: 'tossed',
+            },
+            {
+              id: 'w-init-2',
+              name: 'Half-and-Half',
+              price: 3.49,
+              timestamp: new Date(Date.now() - 5 * 864e5).toISOString(),
+              reason: 'tossed',
+            },
+          ];
+          setWasteEvents(seedWaste);
+        }
+
+        const storedRescue = await AsyncStorage.getItem(`user_rescue_events_${currentUser.id}`);
+        if (storedRescue) {
+          setRescueEvents(JSON.parse(storedRescue));
+        } else {
+          const seedRescue: RescueEvent[] = [
+            {
+              id: 'r-init-1',
+              itemNames: ['Organic Baby Spinach', 'Heavy Cream'],
+              dollarsSaved: 6.68,
+              recipeTitle: 'Creamy Spinach Pasta',
+              timestamp: new Date(Date.now() - 8 * 864e5).toISOString(),
+            },
+            {
+              id: 'r-init-2',
+              itemNames: ['Chicken Thighs', 'Mushrooms'],
+              dollarsSaved: 10.78,
+              recipeTitle: 'Mushroom Herb Chicken',
+              timestamp: new Date(Date.now() - 2 * 864e5).toISOString(),
+            },
+          ];
+          setRescueEvents(seedRescue);
+        }
       } catch {}
     };
-    loadSavedRecipes();
+    loadSavedRecipesAndEvents();
   }, [currentUser.id]);
 
   // Backend Live State
@@ -1202,6 +1405,82 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const tossFridgeItem = (id: string, reason: string = 'tossed') => {
+    const target = fridgeItems.find((i) => i.id === id);
+    if (target) {
+      const newEvent: WasteEvent = {
+        id: `waste-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        itemId: target.id,
+        name: target.name,
+        price: target.price || 3.5,
+        timestamp: new Date().toISOString(),
+        reason,
+      };
+      setWasteEvents((prev) => {
+        const updated = [newEvent, ...prev];
+        AsyncStorage.setItem(`user_waste_events_${currentUser.id}`, JSON.stringify(updated)).catch(() => {});
+        return updated;
+      });
+    }
+    removeFridgeItem(id);
+  };
+
+  const recordRescuedMeal = (itemNames: string[], dollarsSaved: number, title?: string) => {
+    const newEvent: RescueEvent = {
+      id: `rescue-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      itemNames,
+      dollarsSaved,
+      recipeTitle: title,
+      timestamp: new Date().toISOString(),
+    };
+    setRescueEvents((prev) => {
+      const updated = [newEvent, ...prev];
+      AsyncStorage.setItem(`user_rescue_events_${currentUser.id}`, JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
+
+    // Remove matching fridge items from user's fridge
+    setFridgeItems((prev) =>
+      prev.filter((item) => {
+        if (item.user_id !== currentUser.id) return true;
+        const matches = itemNames.some(
+          (name) =>
+            item.name.toLowerCase().includes(name.toLowerCase()) ||
+            name.toLowerCase().includes(item.name.toLowerCase())
+        );
+        return !matches;
+      })
+    );
+  };
+
+  const recordWastedMeal = (itemNames: string[], dollarsWasted: number, title?: string) => {
+    const newEvent: WasteEvent = {
+      id: `waste-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      name: itemNames.join(', ') || 'Cooking attempt',
+      price: dollarsWasted,
+      timestamp: new Date().toISOString(),
+      reason: 'cooking_failed',
+    };
+    setWasteEvents((prev) => {
+      const updated = [newEvent, ...prev];
+      AsyncStorage.setItem(`user_waste_events_${currentUser.id}`, JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
+
+    // Remove matching fridge items from user's fridge
+    setFridgeItems((prev) =>
+      prev.filter((item) => {
+        if (item.user_id !== currentUser.id) return true;
+        const matches = itemNames.some(
+          (name) =>
+            item.name.toLowerCase().includes(name.toLowerCase()) ||
+            name.toLowerCase().includes(item.name.toLowerCase())
+        );
+        return !matches;
+      })
+    );
+  };
+
   const toggleFollowFriend = (friendId: string) => {
     setFollowingFriendIds((prev) =>
       prev.includes(friendId) ? prev.filter((id) => id !== friendId) : [...prev, friendId]
@@ -1498,6 +1777,69 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setFeasts((prev) => prev.filter((f) => f.id !== feastId));
   };
 
+  const startFeastCooking = (feastId: string) => {
+    setFeasts((prev) =>
+      prev.map((f) => (f.id === feastId ? { ...f, status: 'cooking' as const } : f))
+    );
+  };
+
+  const completeFeast = (feastId: string, outcome: 'rescued' | 'failed') => {
+    setFeasts((prev) =>
+      prev.map((f) =>
+        f.id === feastId ? { ...f, status: 'completed' as const, outcome } : f
+      )
+    );
+
+    const feast = feasts.find((f) => f.id === feastId);
+    if (feast) {
+      const items = feast.bringBreakdown
+        ? feast.bringBreakdown.map((b) => b.items)
+        : [feast.recipeTitle];
+      if (outcome === 'rescued') {
+        recordRescuedMeal(items, feast.dollarsSaved || 15, feast.recipeTitle);
+      } else {
+        recordWastedMeal(items, 8.5, feast.recipeTitle);
+      }
+    }
+  };
+
+  const respondToFeastInvite = (
+    feastId: string,
+    response: 'accepted' | 'declined'
+  ) => {
+    setFeasts((prev) =>
+      prev.map((f) => {
+        if (f.id !== feastId) return f;
+        const updatedFriends = f.invitedFriends.map((friend) =>
+          friend.id === currentUser.id ? { ...friend, status: response } : friend
+        );
+        return {
+          ...f,
+          userRsvpStatus: response,
+          invitedFriends: updatedFriends,
+        };
+      })
+    );
+
+    if (backendConnected) {
+      const numFeastId = Number(feastId);
+      const numUserId = Number(currentUser.id);
+      if (!isNaN(numFeastId) && !isNaN(numUserId)) {
+        backendApi.respondToFeast(numFeastId, numUserId, response).catch(() => {});
+      }
+    }
+  };
+
+  const nudgeFeastFriend = (feastId: string, friendId: string): string => {
+    const friend = friends.find((f) => f.id === friendId);
+    const friendName = friend?.display_name || 'friend';
+    return `Nudge reminder sent to ${friendName}!`;
+  };
+
+  const addCustomFeast = (feast: FeastInvite) => {
+    setFeasts((prev) => [feast, ...prev]);
+  };
+
   const updateProfile = (updates: {
     display_name?: string;
     avatar_url?: string;
@@ -1737,6 +2079,51 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return savedRecipes.find((r) => r.id === id) || recipes.find((r) => r.id === id);
   };
 
+  const dynamicInsights = useMemo<DynamicInsightsData>(() => {
+    const shoppingTotal = shoppingTrips.reduce((acc, t) => acc + (t.total_cost || 0), 0);
+    const itemsTotal = fridgeItems
+      .filter((i) => i.user_id === currentUser.id && !i.shopping_trip_id)
+      .reduce((acc, i) => acc + (i.price || 0), 0);
+    const totalSpent = Math.round(shoppingTotal + itemsTotal);
+
+    const totalWasted = Number(
+      wasteEvents.reduce((acc, e) => acc + (e.price || 0), 0).toFixed(2)
+    );
+
+    const totalRescued = Number(
+      rescueEvents.reduce((acc, e) => acc + (e.dollarsSaved || 0), 0).toFixed(2)
+    );
+
+    const weeklyData = [
+      { label: 'W1', spent: 58, wasted: Math.max(2, Math.round(totalWasted * 0.35)) },
+      { label: 'W2', spent: 65, wasted: Math.max(1, Math.round(totalWasted * 0.25)) },
+      { label: 'W3', spent: 48, wasted: Math.max(1, Math.round(totalWasted * 0.2)) },
+      { label: 'W4', spent: 72, wasted: Math.max(1, Math.round(totalWasted * 0.12)) },
+      { label: 'W5', spent: 55, wasted: Math.max(1, Math.round(totalWasted * 0.08)) },
+      {
+        label: 'W6',
+        spent: totalSpent > 0 ? Math.min(totalSpent, 62) : 62,
+        wasted: Math.round(totalWasted),
+      },
+    ];
+
+    const percentWasteReduction =
+      totalSpent > 0
+        ? Math.max(
+            0,
+            Math.round((totalRescued / (totalRescued + totalWasted || 1)) * 100)
+          )
+        : 80;
+
+    return {
+      totalSpent: totalSpent > 0 ? totalSpent : 140,
+      totalWasted: totalWasted > 0 ? totalWasted : 5.38,
+      totalRescued: totalRescued > 0 ? totalRescued : 17.46,
+      weeklyData,
+      percentWasteReduction,
+    };
+  }, [shoppingTrips, fridgeItems, currentUser.id, wasteEvents, rescueEvents]);
+
   const value = useMemo(
     () => ({
       currentUser,
@@ -1750,6 +2137,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       saveRecipe,
       removeSavedRecipe,
       feasts,
+      wasteEvents,
+      rescueEvents,
+      dynamicInsights,
+      tossFridgeItem,
+      recordRescuedMeal,
+      recordWastedMeal,
+      startFeastCooking,
+      completeFeast,
+      respondToFeastInvite,
+      nudgeFeastFriend,
+      addCustomFeast,
       backendConnected,
       isSyncing,
       backendSyncAttempted,
@@ -1804,6 +2202,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       currentUser,
       friends,
       feasts,
+      wasteEvents,
+      rescueEvents,
+      dynamicInsights,
       followingFriendIds,
       circles,
       fridgeItems,

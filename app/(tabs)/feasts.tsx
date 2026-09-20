@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp } from '../../context/AppContext';
+import { useApp, FeastInvite } from '../../context/AppContext';
 import { Colors, Fonts } from '../../constants/Theme';
 import StickerCard from '../../components/ui/StickerCard';
 import StickerButton from '../../components/ui/StickerButton';
@@ -52,6 +52,7 @@ export default function FeastsScreen() {
     fridgeItems,
     backendSyncAttempted,
     getFriendFridgeItems,
+    addCustomFeast,
   } = useApp();
 
   // Active step in Feast mode
@@ -248,6 +249,53 @@ export default function FeastsScreen() {
   const handleToggleFriendSelection = (id: string) => {
     setSelectedFriendIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSendInvite = () => {
+    const invitedFriendsList = mutualFriends
+      .filter((f) => selectedFriendIds.includes(f.id))
+      .map((f, idx) => ({
+        id: f.id,
+        name: f.display_name,
+        username: f.username,
+        avatarUrl: f.avatar_url || '',
+        status: (idx === 0 ? 'accepted' : 'pending') as 'accepted' | 'pending',
+      }));
+
+    const newFeast: FeastInvite = {
+      id: `feast-${Date.now()}`,
+      partyName: `${currentUser.display_name.split(' ')[0]}'s Feast Mode`,
+      hostId: currentUser.id,
+      hostName: currentUser.display_name,
+      candidateRecipes: [],
+      recipeId: activeRecipe.id,
+      recipeTitle: activeRecipe.title,
+      cookTime: activeRecipe.cookTime,
+      foodRescuedGrams: 800,
+      dollarsSaved: 16.5,
+      invitedFriends: invitedFriendsList,
+      status: 'pending',
+      userRsvpStatus: 'host',
+      scheduledFor: scheduledDateTime,
+      bringBreakdown: activeRecipe.bringList,
+      cookingTasks: activeRecipe.steps.map((step, idx) => ({
+        step_number: idx + 1,
+        instruction: step,
+      })),
+      createdAt: new Date().toISOString(),
+    };
+
+    addCustomFeast(newFeast);
+    Alert.alert(
+      'Invites Sent! ✉️',
+      `Sent feast invites for "${activeRecipe.title}" (${scheduledDateTime})! You can track RSVPs in Meals.`,
+      [
+        {
+          text: 'Go to Meals 🍳',
+          onPress: () => router.push('/(tabs)/meals'),
+        },
+      ]
     );
   };
 
@@ -513,7 +561,7 @@ export default function FeastsScreen() {
             <View style={styles.ctaBottomWrap}>
               <StickerButton
                 title="Send out invite to friends ✉️"
-                onPress={() => setCurrentStep('waiting')}
+                onPress={handleSendInvite}
                 variant="primary"
                 size="large"
               />

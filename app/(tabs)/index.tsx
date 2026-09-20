@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -37,15 +37,20 @@ type FilterType = "all" | "fresh" | "soon" | "now";
 export default function ShelfScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { friendId } = useLocalSearchParams<{ friendId?: string }>();
   const {
     currentUser,
     friends,
     fridgeItems,
     removeFridgeItem,
+    tossFridgeItem,
     addManualFridgeItem,
     addShoppingTripFromReceipt,
     backendSyncAttempted,
   } = useApp();
+
+  const viewedFriend = friendId ? friends.find((f) => f.id === friendId) : null;
+  const isViewingFriend = !!viewedFriend;
 
   // Buddy avatar state
   const [buddyKey, setBuddyKey] = useState<CharacterKey>("can");
@@ -86,17 +91,20 @@ export default function ShelfScreen() {
   // Filter state
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
 
-  // User items
-  const userItems = useMemo(() => {
+  // Items to display (either viewed friend's fridge or current user's fridge)
+  const displayItems = useMemo(() => {
+    if (isViewingFriend && friendId) {
+      return fridgeItems.filter((item) => item.user_id === friendId);
+    }
     return fridgeItems.filter((item) => item.user_id === currentUser.id);
-  }, [fridgeItems, currentUser.id]);
+  }, [fridgeItems, currentUser.id, isViewingFriend, friendId]);
 
   // Urgency classifications
   const { urgentRedCount, rescueBadgeCount, categorizedItems } = useMemo(() => {
     let redCount = 0;
     let yellowAndRedCount = 0;
 
-    const mapped = userItems.map((item) => {
+    const mapped = displayItems.map((item) => {
       const daysLeft = getDaysLeft(item.expires_at);
       const urgency = getStatusUrgency(daysLeft);
       const lookup = lookupFoodCharacter(item.name);
@@ -119,7 +127,7 @@ export default function ShelfScreen() {
       rescueBadgeCount: yellowAndRedCount,
       categorizedItems: mapped,
     };
-  }, [userItems]);
+  }, [displayItems]);
 
   // Filtered items
   const filteredItems = useMemo(() => {
@@ -142,6 +150,7 @@ export default function ShelfScreen() {
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
 
   const toggleItemSelection = (id: string) => {
+    if (isViewingFriend) return;
     setSelectedItemIds((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
     );
@@ -152,6 +161,7 @@ export default function ShelfScreen() {
   };
 
   const handleItemPress = (item: (typeof categorizedItems)[0]) => {
+    if (isViewingFriend) return;
     if (selectedItemIds.length > 0) {
       toggleItemSelection(item.id);
     } else {
@@ -160,6 +170,7 @@ export default function ShelfScreen() {
   };
 
   const handleItemLongPress = (item: (typeof categorizedItems)[0]) => {
+    if (isViewingFriend) return;
     toggleItemSelection(item.id);
   };
 
@@ -188,7 +199,7 @@ export default function ShelfScreen() {
   };
 
   const handleTossItem = (item: FridgeItemRow) => {
-    removeFridgeItem(item.id);
+    tossFridgeItem(item.id);
     setSelectedItemIds((prev) => prev.filter((id) => id !== item.id));
     setSelectedItemForRemove(null);
   };
@@ -306,10 +317,29 @@ export default function ShelfScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
+        {/* Friend Fridge Banner */}
+        {isViewingFriend && (
+          <View style={styles.viewingFriendBanner}>
+            <Pressable
+              style={styles.backToMyFridgeBtn}
+              onPress={() => router.replace("/(tabs)")}
+            >
+              <Text style={styles.backToMyFridgeText}>‹ Back to My Fridge</Text>
+            </Pressable>
+            <Text style={styles.viewingFriendNotice}>
+              Viewing {viewedFriend?.display_name}'s Fridge
+            </Text>
+          </View>
+        )}
+
         {/* SECTION 1: Header */}
         <View style={styles.headerRow}>
           <View style={styles.headerTextWrap}>
-            <Text style={styles.appTitle}>Fridge Friends</Text>
+            <Text style={styles.appTitle}>
+              {isViewingFriend
+                ? `@${viewedFriend?.username}'s Fridge`
+                : "Fridge Friends"}
+            </Text>
             <Text style={styles.urgencySubtitle}>
               {urgentRedCount === 0
                 ? "All groceries are fresh!"
@@ -320,7 +350,7 @@ export default function ShelfScreen() {
           {/* Profile Avatar (static image, non-clickable) */}
           <View style={styles.avatarSticker}>
             <FoodCharacter
-              foodKey={buddyKey}
+              foodKey={isViewingFriend ? "lemon" : buddyKey}
               mood="happy"
               size={44}
               animate={false}
@@ -329,20 +359,26 @@ export default function ShelfScreen() {
         </View>
 
         {/* SECTION 2: Top Action Button (+ Add groceries) */}
-        <View style={styles.topActionsRow}>
-          <StickerButton
-            title="+ Add groceries"
-            onPress={() => setIsAddMenuVisible(true)}
-            variant="primary"
-            size="large"
-          />
-        </View>
+        {!isViewingFriend && (
+          <View style={styles.topActionsRow}>
+            <StickerButton
+              title="+ Add groceries"
+              onPress={() => setIsAddMenuVisible(true)}
+              variant="primary"
+              size="large"
+            />
+          </View>
+        )}
 
         {/* SECTION 3: "Your shelf" Section Header & Multi-Select Status */}
         <View style={styles.shelfSectionHeader}>
           <View style={styles.shelfHeaderRow}>
-            <Text style={styles.shelfTitle}>Your Fridge</Text>
-            {selectedItemIds.length === 0 ? (
+            <Text style={styles.shelfTitle}>
+              {isViewingFriend
+                ? `${viewedFriend?.display_name}'s Fridge`
+                : "Your Fridge"}
+            </Text>
+            {!isViewingFriend && selectedItemIds.length === 0 ? (
               <Text style={styles.shelfHelperText}>Hold item to select</Text>
             ) : null}
           </View>
@@ -447,7 +483,7 @@ export default function ShelfScreen() {
       </ScrollView>
 
       {/* SECTION 5: Floating Bottom Action Buttons (Only shown when items selected) */}
-      {selectedItemIds.length > 0 && (
+      {selectedItemIds.length > 0 && !isViewingFriend && (
         <View
           style={[
             styles.bottomFloatingBar,
@@ -749,5 +785,35 @@ const styles = StyleSheet.create({
   bottomButtonsStack: {
     flexDirection: "column",
     gap: 10,
+  },
+  viewingFriendBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#EBF3E8",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: Colors.ink,
+    marginBottom: 16,
+  },
+  backToMyFridgeBtn: {
+    backgroundColor: Colors.paper,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.ink,
+  },
+  backToMyFridgeText: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 13,
+    color: Colors.ink,
+  },
+  viewingFriendNotice: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 13,
+    color: "#2E5A36",
   },
 });
