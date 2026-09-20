@@ -1,11 +1,12 @@
 /**
  * Automated Test Suite for FridgeFriends FastAPI Backend
- * Target: https://fridge-friends-be.fastapicloud.dev
+ * Target: https://fridge-friends-be-144bbbd9.fastapicloud.dev
  */
 
-const BASE_URL =
+const BASE_URL = (
   process.env.EXPO_PUBLIC_BACKEND_URL ||
-  "https://https://fridge-friends-be-144bbbd9.fastapicloud.dev/-friends-be.fastapicloud.dev";
+  "https://fridge-friends-be-144bbbd9.fastapicloud.dev"
+).replace(/\/+$/, "");
 
 console.log(`\n======================================================`);
 console.log(`🧪 FRIDGEFRIENDS BACKEND INTEGRATION TEST`);

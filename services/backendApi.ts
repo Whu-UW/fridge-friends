@@ -13,8 +13,7 @@ import {
 import type { FriendEntry, FeastInvite, FeastFriendStatus } from '../context/AppContext';
 
 const rawBackendUrl =
-  process.env.EXPO_PUBLIC_BACKEND_URL ||
-  'https://fridge-friends-be-144bbbd9.fastapicloud.dev';
+  process.env.EXPO_PUBLIC_BACKEND_URL || 'https://fridge-friends-be-144bbbd9.fastapicloud.dev';
 
 export const BACKEND_BASE_URL = rawBackendUrl.replace(/\/+$/, '');
 
@@ -22,12 +21,44 @@ export const BACKEND_BASE_URL = rawBackendUrl.replace(/\/+$/, '');
  * Backend Types (from OpenAPI 3.1.0 specification)
  * ============================================================================ */
 
+export type BackendBuddy = 'sammy' | 'milo' | 'eddie' | 'carl' | 'bella';
+
 export interface BackendUser {
   id: number;
+  username?: string | null;
   email: string | null;
   name: string;
-  username?: string | null;
+  buddy?: BackendBuddy;
+  diets?: string[];
+  avoid_allergens?: string[];
+  favorite_cuisines?: string[];
   created_at: string;
+}
+
+export interface BackendStatsBucket {
+  label: string;
+  starts_on: string;
+  ends_on: string;
+  spent: number;
+  wasted: number;
+  spent_and_used: number;
+  rescued: number;
+  items_wasted: number;
+  items_rescued: number;
+}
+
+export interface BackendStats {
+  user_id: number;
+  period: 'weeks' | 'months';
+  buckets: BackendStatsBucket[];
+  spent: number;
+  wasted: number;
+  rescued: number;
+  waste_percent_first: number;
+  waste_percent_last: number;
+  summary: string;
+  priced_items: number;
+  unpriced_items: number;
 }
 
 export interface BackendGroceryItem {
@@ -80,8 +111,7 @@ export interface BackendFriend {
 export interface BackendAttendeeRead {
   user_id: number;
   name: string;
-  email: string | null;
-  username?: string | null;
+  email: string;
   response: 'invited' | 'accepted' | 'declined';
   responded_at: string | null;
   is_host: boolean;
@@ -184,17 +214,13 @@ export function getUserAvatar(userId: number, name: string): string {
 }
 
 export function toFrontendProfile(user: BackendUser): ProfileRow {
-  const emailUsername =
-    user.email && typeof user.email === 'string'
-      ? user.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_')
-      : '';
-  const username = user.username || emailUsername || `user_${user.id}`;
+  const name = user.name || 'User';
   return {
     id: String(user.id),
-    email: user.email || '',
-    username,
-    display_name: user.name || 'User',
-    avatar_url: getUserAvatar(user.id, user.name || 'User'),
+    email: user.email ?? '',
+    username: user.username || `user_${user.id}`,
+    display_name: name,
+    avatar_url: getUserAvatar(user.id, name),
     created_at: user.created_at,
   };
 }
@@ -203,15 +229,10 @@ export function toFrontendFriend(backendFriend: BackendFriend): FriendEntry {
   const friendUser = backendFriend.friend;
   const friendId = friendUser?.id || backendFriend.friend_id;
   const friendName = friendUser?.name || 'Friend';
-  const emailUsername =
-    friendUser?.email && typeof friendUser.email === 'string'
-      ? friendUser.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_')
-      : '';
-  const username = friendUser?.username || emailUsername || `user_${friendId}`;
   return {
     id: String(friendId),
-    email: friendUser?.email || '',
-    username,
+    email: friendUser?.email ?? '',
+    username: friendUser?.username || `user_${friendId}`,
     display_name: friendName,
     avatar_url: getUserAvatar(friendId, friendName),
     created_at: friendUser?.created_at || backendFriend.created_at,
@@ -394,7 +415,7 @@ export function toFrontendFeast(backendFeast: BackendFeastRead): FeastInvite {
     `feast-rec-${backendFeast.id}`
   );
 
-  const invitedFriends: FeastFriendStatus[] = (backendFeast.attendees || [])
+  const invitedFriends: FeastFriendStatus[] = backendFeast.attendees
     .filter((a) => !a.is_host)
     .map((attendee) => {
       const status: 'accepted' | 'pending' | 'declined' =
@@ -404,18 +425,13 @@ export function toFrontendFeast(backendFeast: BackendFeastRead): FeastInvite {
           ? 'declined'
           : 'pending';
 
-      const emailUsername =
-        attendee.email && typeof attendee.email === 'string'
-          ? attendee.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_')
-          : '';
-      const username = attendee.username || emailUsername || `user_${attendee.user_id}`;
-      const attendeeName = attendee.name || 'Guest';
-
       return {
         id: String(attendee.user_id),
-        name: attendeeName,
-        username,
-        avatarUrl: getUserAvatar(attendee.user_id, attendeeName),
+        name: attendee.name,
+        username:
+          attendee.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_') ||
+          `user_${attendee.user_id}`,
+        avatarUrl: getUserAvatar(attendee.user_id, attendee.name),
         status,
       };
     });
@@ -583,6 +599,68 @@ export const backendApi = {
   },
 
   /**
+   * Sign up with a User ID (username), password and buddy
+   */
+  async signup(
+    username: string,
+    password: string,
+    buddy: BackendBuddy
+  ): Promise<BackendUser> {
+    return request<BackendUser>('/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify({ username, password, buddy }),
+    });
+  },
+
+  /**
+   * Log in with User ID (username) and password
+   */
+  async login(username: string, password: string): Promise<BackendUser> {
+    return request<BackendUser>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+  },
+
+  /**
+   * Replace the user's taste profile (diets, allergens, cuisines)
+   */
+  async setTasteProfile(
+    userId: number,
+    profile: { diets: string[]; avoid_allergens: string[]; favorite_cuisines: string[] }
+  ): Promise<void> {
+    await request(`/users/${userId}/taste-profile`, {
+      method: 'PUT',
+      body: JSON.stringify(profile),
+    });
+  },
+
+  /**
+   * Change password (requires the current password)
+   */
+  async changePassword(
+    userId: number,
+    currentPassword: string,
+    newPassword: string
+  ): Promise<void> {
+    await request(`/users/${userId}/password`, {
+      method: 'PUT',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+  },
+
+  /**
+   * Waste & spending stats, bucketed by week or month
+   */
+  async getStats(
+    userId: number,
+    period: 'weeks' | 'months',
+    buckets = 6
+  ): Promise<BackendStats> {
+    return request<BackendStats>(`/users/${userId}/stats?period=${period}&buckets=${buckets}`);
+  },
+
+  /**
    * Create a new user
    */
   async createUser(name: string, email: string): Promise<BackendUser> {
@@ -595,7 +673,10 @@ export const backendApi = {
   /**
    * Update user details (name, email)
    */
-  async updateUser(userId: number, updates: { name?: string; email?: string }): Promise<BackendUser> {
+  async updateUser(
+    userId: number,
+    updates: { name?: string; email?: string; username?: string; buddy?: BackendBuddy }
+  ): Promise<BackendUser> {
     return request<BackendUser>(`/users/${userId}`, {
       method: 'PATCH',
       body: JSON.stringify(updates),

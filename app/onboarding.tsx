@@ -13,6 +13,7 @@ import StickerCard from '../components/ui/StickerCard';
 import StickerButton from '../components/ui/StickerButton';
 import FoodCharacter from '../components/FoodCharacter';
 import { CharacterKey } from '../services/foodCharacterLookup';
+import { backendApi } from '../services/backendApi';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function OnboardingScreen() {
@@ -69,6 +70,20 @@ export default function OnboardingScreen() {
       );
     } catch {
       // Ignored
+    }
+
+    // Save the taste profile to the backend (best effort; local copy is already saved)
+    const backendUserId = Number(params.userId);
+    if (backendUserId) {
+      try {
+        await backendApi.setTasteProfile(backendUserId, {
+          diets: selectedDiets.map((d) => d.toLowerCase().replace('-', '_')),
+          avoid_allergens: selectedAvoids.map((a) => a.toLowerCase().replace(' ', '_')),
+          favorite_cuisines: selectedCuisines,
+        });
+      } catch (err) {
+        console.warn('Could not save taste profile:', err);
+      }
     }
 
     // Navigate straight to the Shelf!
