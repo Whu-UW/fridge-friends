@@ -1046,14 +1046,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         let expiresAt: string;
         let shelfLifeDays = item.shelfLifeDays || 0;
 
-        if (shelfLifeDays > 0) {
+        if (item.dateExpired) {
+          expiresAt = new Date(item.dateExpired).toISOString();
+          const diffMs = new Date(expiresAt).getTime() - new Date(receipt.tripDate).getTime();
+          shelfLifeDays = Math.max(1, Math.round(diffMs / dayMs));
+        } else if (shelfLifeDays > 0) {
           expiresAt = new Date(
             new Date(receipt.tripDate).getTime() + shelfLifeDays * dayMs
           ).toISOString();
         } else {
           const estimate = await estimateShelfLife(
             item.name,
-            item.category,
+            item.category || 'General',
             receipt.tripDate
           );
           expiresAt = estimate.expiresAt;
