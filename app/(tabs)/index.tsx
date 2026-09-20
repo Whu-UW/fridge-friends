@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,8 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../context/AppContext';
 import { Colors, Fonts, Radius } from '../../constants/Theme';
@@ -16,11 +17,13 @@ import StickerCard from '../../components/ui/StickerCard';
 import StickerButton from '../../components/ui/StickerButton';
 import StatusChip from '../../components/ui/StatusChip';
 import FoodCharacter from '../../components/FoodCharacter';
+import AddGroceriesActionModal from '../../components/AddGroceriesActionModal';
 import AddGroceryModal from '../../components/AddGroceryModal';
 import ScanReceiptModal from '../../components/ScanReceiptModal';
 import RemoveItemSheet from '../../components/RemoveItemSheet';
 import FeastFriendRequirementModal from '../../components/FeastFriendRequirementModal';
 import {
+  CharacterKey,
   lookupFoodCharacter,
   getDaysLeft,
   getStatusUrgency,
@@ -44,9 +47,35 @@ export default function ShelfScreen() {
     backendSyncAttempted,
   } = useApp();
 
+  // Buddy avatar state
+  const [buddyKey, setBuddyKey] = useState<CharacterKey>('can');
+
+  // Keep buddy in sync with You/Profile selections
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      const loadBuddy = async () => {
+        try {
+          const stored =
+            (await AsyncStorage.getItem(`user_buddy_${currentUser.id}`)) ||
+            (await AsyncStorage.getItem('user_buddy_default'));
+          if (isMounted && stored) {
+            setBuddyKey(stored as CharacterKey);
+          }
+        } catch {}
+      };
+      loadBuddy();
+      return () => {
+        isMounted = false;
+      };
+    }, [currentUser.id])
+  );
+
   // Modals
+  const [isAddMenuVisible, setIsAddMenuVisible] = useState(false);
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
   const [isScanModalVisible, setIsScanModalVisible] = useState(false);
+  const [scanSource, setScanSource] = useState<'camera' | 'library' | null>(null);
   const [selectedItemForRemove, setSelectedItemForRemove] = useState<FridgeItemRow | null>(null);
   const [isFriendReqModalVisible, setIsFriendReqModalVisible] = useState(false);
 
@@ -173,28 +202,21 @@ export default function ShelfScreen() {
                 : `${urgentRedCount} ${urgentRedCount === 1 ? 'item needs' : 'items need'} rescuing!`}
             </Text>
           </View>
+
+          {/* Profile Avatar (static image, non-clickable) */}
+          <View style={styles.avatarSticker}>
+            <FoodCharacter foodKey={buddyKey} mood="happy" size={44} animate={false} />
+          </View>
         </View>
 
-        {/* SECTION 2: Top Action Buttons (+ Add groceries & Receipt) */}
+        {/* SECTION 2: Top Action Button (+ Add groceries) */}
         <View style={styles.topActionsRow}>
-          <View style={{ flex: 1 }}>
-            <StickerButton
-              title="+ Add groceries"
-              onPress={() => setIsAddModalVisible(true)}
-              variant="primary"
-              size="large"
-            />
-          </View>
-
-          <Pressable
-            style={styles.receiptScanBtn}
-            onPress={() => setIsScanModalVisible(true)}
-            hitSlop={6}
-          >
-            <View style={styles.receiptIconInner}>
-              <Text style={{ fontSize: 24 }}>🧾</Text>
-            </View>
-          </Pressable>
+          <StickerButton
+            title="+ Add groceries"
+            onPress={() => setIsAddMenuVisible(true)}
+            variant="primary"
+            size="large"
+          />
         </View>
 
         {/* SECTION 3: "Your shelf" Section Header & Status Filter Chips */}
@@ -319,6 +341,25 @@ export default function ShelfScreen() {
       </View>
 
       {/* Modals & Sheets */}
+      <AddGroceriesActionModal
+        visible={isAddMenuVisible}
+        onClose={() => setIsAddMenuVisible(false)}
+        onSelectManual={() => {
+          setIsAddMenuVisible(false);
+          setIsAddModalVisible(true);
+        }}
+        onSelectScanCamera={() => {
+          setIsAddMenuVisible(false);
+          setScanSource('camera');
+          setIsScanModalVisible(true);
+        }}
+        onSelectUploadPhoto={() => {
+          setIsAddMenuVisible(false);
+          setScanSource('library');
+          setIsScanModalVisible(true);
+        }}
+      />
+
       <AddGroceryModal
         visible={isAddModalVisible}
         onClose={() => setIsAddModalVisible(false)}
@@ -327,7 +368,11 @@ export default function ShelfScreen() {
 
       <ScanReceiptModal
         visible={isScanModalVisible}
-        onClose={() => setIsScanModalVisible(false)}
+        initialSource={scanSource}
+        onClose={() => {
+          setIsScanModalVisible(false);
+          setScanSource(null);
+        }}
         onAddItems={handleAddReceipt}
       />
 
@@ -372,7 +417,7 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 20,
   },
   headerTextWrap: {
@@ -393,12 +438,13 @@ const styles = StyleSheet.create({
   avatarSticker: {
     width: 52,
     height: 52,
-    borderRadius: 18,
-    backgroundColor: Colors.paper,
+    borderRadius: 26,
+    backgroundColor: Colors.fresh.bg,
     borderWidth: 2.5,
     borderColor: Colors.ink,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
     shadowColor: Colors.ink,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 1,
@@ -406,29 +452,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   topActionsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'center',
-    marginBottom: 28,
-  },
-  receiptScanBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: Radius.button,
-    backgroundColor: Colors.paper,
-    borderWidth: 2.5,
-    borderColor: Colors.ink,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: Colors.ink,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 4,
-  },
-  receiptIconInner: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    marginBottom: 24,
   },
   shelfSectionHeader: {
     marginBottom: 16,

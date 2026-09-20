@@ -1043,11 +1043,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // Calculate LLM expiration estimation for each item in parallel
     const newItems: FridgeItemRow[] = await Promise.all(
       receipt.items.map(async (item, idx) => {
-        const { expiresAt, shelfLifeDays } = await estimateShelfLife(
-          item.name,
-          item.category,
-          receipt.tripDate
-        );
+        let expiresAt: string;
+        let shelfLifeDays = item.shelfLifeDays || 0;
+
+        if (shelfLifeDays > 0) {
+          expiresAt = new Date(
+            new Date(receipt.tripDate).getTime() + shelfLifeDays * dayMs
+          ).toISOString();
+        } else {
+          const estimate = await estimateShelfLife(
+            item.name,
+            item.category,
+            receipt.tripDate
+          );
+          expiresAt = estimate.expiresAt;
+          shelfLifeDays = estimate.shelfLifeDays;
+        }
+
         const hoursLeft = (new Date(expiresAt).getTime() - Date.now()) / 36e5;
         const status: 'fresh' | 'expiring' = hoursLeft <= 48 ? 'expiring' : 'fresh';
 

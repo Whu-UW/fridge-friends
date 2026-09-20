@@ -8,11 +8,9 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
-  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../context/AppContext';
 import { Colors, Fonts } from '../../constants/Theme';
@@ -29,7 +27,6 @@ export default function ProfileYouScreen() {
     currentUser,
     friends,
     addFriend,
-    updateProfile,
     getFriendFridgeItems,
     backendSyncAttempted,
   } = useApp();
@@ -67,6 +64,12 @@ export default function ProfileYouScreen() {
           if (parsed.diets) setSelectedDiets(parsed.diets);
           if (parsed.avoids) setSelectedAvoids(parsed.avoids);
           if (parsed.cuisines) setSelectedCuisines(parsed.cuisines);
+        }
+        const storedBuddy = await AsyncStorage.getItem(`user_buddy_${currentUser.id}`);
+        if (storedBuddy) {
+          setBuddyKey(storedBuddy as CharacterKey);
+          const found = STARTER_BUDDIES.find((b) => b.key === storedBuddy);
+          if (found) setBuddyName(found.desc);
         }
       } catch {}
     };
@@ -133,27 +136,6 @@ export default function ProfileYouScreen() {
     }
   };
 
-  const handleUploadProfilePhoto = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Gallery Permission', 'Gallery permission is needed to choose a profile photo.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets[0]?.uri) {
-      const uri = result.assets[0].uri;
-      updateProfile({ avatar_url: uri });
-      Alert.alert('Photo Updated! 📸', 'Your profile photo has been updated.');
-    }
-  };
-
   // Stacked Bar Data (Sample numbers matching Screen 7 in design spec)
   const chartWeeks = [
     { label: 'W1', spent: 58, wasted: 18 },
@@ -187,13 +169,9 @@ export default function ProfileYouScreen() {
         {/* SECTION 1: Buddy & Handle Card */}
         <StickerCard backgroundColor={Colors.paper} borderRadius={24} style={styles.buddyCard}>
           <View style={styles.buddyHeaderRow}>
-            {/* Buddy Mascot Sticker or Custom Uploaded Photo */}
+            {/* Buddy Mascot Avatar */}
             <View style={styles.buddyAvatarBox}>
-              {currentUser.avatar_url ? (
-                <Image source={{ uri: currentUser.avatar_url }} style={styles.customAvatarImage} />
-              ) : (
-                <FoodCharacter foodKey={buddyKey} mood="happy" size={56} animate={false} />
-              )}
+              <FoodCharacter foodKey={buddyKey} mood="happy" size={56} animate={false} />
             </View>
 
             <View style={{ flex: 1 }}>
@@ -202,22 +180,13 @@ export default function ProfileYouScreen() {
             </View>
           </View>
 
-          {/* Action Buttons: Change buddy and Upload photo */}
-          <View style={styles.buddyActionsRow}>
-            <Pressable
-              style={styles.changeBuddyBtn}
-              onPress={() => setIsChangeBuddyVisible(true)}
-            >
-              <Text style={styles.changeBuddyBtnText}>Change buddy</Text>
-            </Pressable>
-
-            <Pressable
-              style={styles.uploadPhotoBtn}
-              onPress={handleUploadProfilePhoto}
-            >
-              <Text style={styles.uploadPhotoBtnText}>Upload photo</Text>
-            </Pressable>
-          </View>
+          {/* Action Button: Change buddy */}
+          <Pressable
+            style={styles.changeBuddyBtn}
+            onPress={() => setIsChangeBuddyVisible(true)}
+          >
+            <Text style={styles.changeBuddyBtnText}>Change buddy</Text>
+          </Pressable>
         </StickerCard>
 
         {/* SECTION 2: Account Settings */}
@@ -529,6 +498,7 @@ export default function ProfileYouScreen() {
           setBuddyKey(key);
           const found = STARTER_BUDDIES.find((b) => b.key === key);
           setBuddyName(found ? found.desc : name);
+          AsyncStorage.setItem(`user_buddy_${currentUser.id}`, key);
         }}
         onClose={() => setIsChangeBuddyVisible(false)}
       />
@@ -569,12 +539,13 @@ const styles = StyleSheet.create({
   buddyAvatarBox: {
     width: 64,
     height: 64,
-    borderRadius: 20,
-    backgroundColor: '#FDEBD0',
-    borderWidth: 2,
+    borderRadius: 32,
+    backgroundColor: Colors.fresh.bg,
+    borderWidth: 2.5,
     borderColor: Colors.ink,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
   userHandle: {
     fontFamily: Fonts.headingBold,
@@ -587,39 +558,16 @@ const styles = StyleSheet.create({
     color: '#76665A',
     marginTop: 2,
   },
-  customAvatarImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-  },
-  buddyActionsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
   changeBuddyBtn: {
-    flex: 1,
+    width: '100%',
     backgroundColor: Colors.paper,
-    borderWidth: 2,
+    borderWidth: 2.5,
     borderColor: Colors.ink,
     borderRadius: 20,
-    paddingVertical: 10,
+    paddingVertical: 11,
     alignItems: 'center',
   },
   changeBuddyBtnText: {
-    fontFamily: Fonts.headingSemiBold,
-    fontSize: 14,
-    color: Colors.ink,
-  },
-  uploadPhotoBtn: {
-    flex: 1,
-    backgroundColor: '#F7E7D2',
-    borderWidth: 2,
-    borderColor: Colors.ink,
-    borderRadius: 20,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  uploadPhotoBtnText: {
     fontFamily: Fonts.headingSemiBold,
     fontSize: 14,
     color: Colors.ink,

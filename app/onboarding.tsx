@@ -57,6 +57,8 @@ export default function OnboardingScreen() {
     try {
       await AsyncStorage.setItem('has_completed_onboarding', 'true');
       const prefKey = params.userId ? `user_preferences_${params.userId}` : 'user_preferences_default';
+      const buddyStorageKey = params.userId ? `user_buddy_${params.userId}` : 'user_buddy_default';
+      await AsyncStorage.setItem(buddyStorageKey, buddyKey);
       await AsyncStorage.setItem(
         prefKey,
         JSON.stringify({
