@@ -34,9 +34,9 @@ function RootNavigation() {
     const checkOnboarding = async () => {
       try {
         const completed = await AsyncStorage.getItem('has_completed_onboarding');
-        const inAuth = segments[0] === 'signup' || segments[0] === 'onboarding';
+        const inAuth = segments[0] === 'login' || segments[0] === 'signup' || segments[0] === 'onboarding';
         if (completed !== 'true' && !inAuth) {
-          router.replace('/signup');
+          router.replace('/login');
         }
       } catch {}
     };
@@ -50,6 +50,7 @@ function RootNavigation() {
       <Stack.Screen name="rescue" />
       <Stack.Screen name="recipe/[id]" />
       <Stack.Screen name="friend/[id]" />
+      <Stack.Screen name="login" />
       <Stack.Screen name="signup" />
       <Stack.Screen name="onboarding" />
       <Stack.Screen name="modal" options={{ presentation: 'modal' }} />

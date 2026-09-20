@@ -43,6 +43,16 @@ export const STARTER_BUDDIES = [
   { key: 'pepper' as CharacterKey, name: 'Bella', food: 'bell pepper', desc: 'Bella the bell pepper' },
 ];
 
+/** Backend buddy enum value (e.g. 'carl') -> local character key (e.g. 'can') */
+export function buddyKeyFromBackend(buddy?: string | null): CharacterKey | undefined {
+  return STARTER_BUDDIES.find((b) => b.name.toLowerCase() === buddy)?.key;
+}
+
+/** Local character key -> backend buddy enum value */
+export function buddyToBackend(key: CharacterKey): string | undefined {
+  return STARTER_BUDDIES.find((b) => b.key === key)?.name.toLowerCase();
+}
+
 /**
  * Classifies any grocery food name into one of the 9 character bodies and 3 degradation categories.
  */

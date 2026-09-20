@@ -17,11 +17,12 @@ import FoodCharacter from '../components/FoodCharacter';
 import { STARTER_BUDDIES, CharacterKey } from '../services/foodCharacterLookup';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApp } from '../context/AppContext';
+import type { BackendBuddy } from '../services/backendApi';
 
 export default function SignUpScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { openAuthModal } = useApp();
+  const { signUp } = useApp();
 
   const [selectedBuddyIndex, setSelectedBuddyIndex] = useState(3); // Carl by default per canvas
   const [userId, setUserId] = useState('');
@@ -31,24 +32,38 @@ export default function SignUpScreen() {
   const selectedBuddy = STARTER_BUDDIES[selectedBuddyIndex];
 
   const handleCreateAccount = async () => {
-    if (!userId.trim()) {
-      Alert.alert('Required Field', 'Please enter a user ID.');
+    const cleanUserId = userId.trim().replace(/^@/, '');
+    if (cleanUserId.length < 3) {
+      Alert.alert('Username too short', 'Your username must be at least 3 characters.');
       return;
     }
-    if (password.length < 6) {
-      Alert.alert('Password too short', 'Password must be at least 6 characters.');
+    if (password.length < 8) {
+      Alert.alert('Password too short', 'Password must be at least 8 characters.');
       return;
     }
 
-    // Advance to "Get to know you"
-    router.push({
-      pathname: '/onboarding',
-      params: {
-        buddyKey: selectedBuddy.key,
-        buddyName: selectedBuddy.name,
-        userId: userId.trim(),
-      },
-    });
+    setIsLoading(true);
+    try {
+      const user = await signUp(
+        cleanUserId,
+        password,
+        selectedBuddy.name.toLowerCase() as BackendBuddy
+      );
+
+      // Advance to "Get to know you"
+      router.push({
+        pathname: '/onboarding',
+        params: {
+          buddyKey: selectedBuddy.key,
+          buddyName: selectedBuddy.name,
+          userId: String(user.id),
+        },
+      });
+    } catch (err: any) {
+      Alert.alert('Could not create account', err?.message || 'Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const safeBottomPadding = Math.max(insets.bottom, 16) + 24;
@@ -94,7 +109,7 @@ export default function SignUpScreen() {
       {/* Inputs: User ID & Password */}
       <View style={styles.inputsStack}>
         <View>
-          <Text style={styles.inputLabel}>User ID</Text>
+          <Text style={styles.inputLabel}>Username</Text>
           <View style={styles.inputWrap}>
             <TextInput
               style={styles.textInput}
@@ -103,6 +118,7 @@ export default function SignUpScreen() {
               value={userId}
               onChangeText={setUserId}
               autoCapitalize="none"
+              autoCorrect={false}
             />
           </View>
         </View>
@@ -117,6 +133,8 @@ export default function SignUpScreen() {
               value={password}
               onChangeText={setPassword}
               secureTextEntry={true}
+              autoCapitalize="none"
+              autoCorrect={false}
             />
           </View>
         </View>
@@ -132,7 +150,7 @@ export default function SignUpScreen() {
           size="large"
         />
 
-        <Pressable style={styles.loginLink} onPress={openAuthModal}>
+        <Pressable style={styles.loginLink} onPress={() => (router.canGoBack() ? router.back() : router.replace('/login'))}>
           <Text style={styles.loginLinkText}>
             Already have an account? <Text style={styles.loginLinkBold}>Log in</Text>
           </Text>

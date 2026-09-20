@@ -1,6 +1,6 @@
 /**
  * Automated Test Suite for FridgeFriends FastAPI Backend
- * Target: https://fridge-friends-be.fastapicloud.dev
+ * Target: https://fridge-friends-be-144bbbd9.fastapicloud.dev
  */
 
 const BASE_URL =

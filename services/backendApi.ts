@@ -1,6 +1,6 @@
 /**
  * FastAPI Backend API Client & Data Adapters
- * Target Base URL: https://fridge-friends-be.fastapicloud.dev
+ * Target Base URL: https://fridge-friends-be-144bbbd9.fastapicloud.dev
  */
 
 import {
@@ -13,17 +13,50 @@ import {
 import type { FriendEntry, FeastInvite, FeastFriendStatus } from '../context/AppContext';
 
 export const BACKEND_BASE_URL =
-  process.env.EXPO_PUBLIC_BACKEND_URL || 'https://fridge-friends-be.fastapicloud.dev';
+  process.env.EXPO_PUBLIC_BACKEND_URL || 'https://fridge-friends-be-144bbbd9.fastapicloud.dev';
 
 /* ============================================================================
  * Backend Types (from OpenAPI 3.1.0 specification)
  * ============================================================================ */
 
+export type BackendBuddy = 'sammy' | 'milo' | 'eddie' | 'carl' | 'bella';
+
 export interface BackendUser {
   id: number;
-  email: string;
+  username: string;
+  email: string | null;
   name: string;
+  buddy?: BackendBuddy;
+  diets?: string[];
+  avoid_allergens?: string[];
+  favorite_cuisines?: string[];
   created_at: string;
+}
+
+export interface BackendStatsBucket {
+  label: string;
+  starts_on: string;
+  ends_on: string;
+  spent: number;
+  wasted: number;
+  spent_and_used: number;
+  rescued: number;
+  items_wasted: number;
+  items_rescued: number;
+}
+
+export interface BackendStats {
+  user_id: number;
+  period: 'weeks' | 'months';
+  buckets: BackendStatsBucket[];
+  spent: number;
+  wasted: number;
+  rescued: number;
+  waste_percent_first: number;
+  waste_percent_last: number;
+  summary: string;
+  priced_items: number;
+  unpriced_items: number;
 }
 
 export interface BackendGroceryItem {
@@ -179,11 +212,10 @@ export function getUserAvatar(userId: number, name: string): string {
 }
 
 export function toFrontendProfile(user: BackendUser): ProfileRow {
-  const username = user.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_');
   return {
     id: String(user.id),
-    email: user.email,
-    username: username || `user_${user.id}`,
+    email: user.email ?? '',
+    username: user.username || `user_${user.id}`,
     display_name: user.name,
     avatar_url: getUserAvatar(user.id, user.name),
     created_at: user.created_at,
@@ -192,11 +224,10 @@ export function toFrontendProfile(user: BackendUser): ProfileRow {
 
 export function toFrontendFriend(backendFriend: BackendFriend): FriendEntry {
   const friendUser = backendFriend.friend;
-  const username = friendUser.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_');
   return {
     id: String(friendUser.id),
-    email: friendUser.email,
-    username: username || `user_${friendUser.id}`,
+    email: friendUser.email ?? '',
+    username: friendUser.username || `user_${friendUser.id}`,
     display_name: friendUser.name,
     avatar_url: getUserAvatar(friendUser.id, friendUser.name),
     created_at: friendUser.created_at,
@@ -563,6 +594,68 @@ export const backendApi = {
   },
 
   /**
+   * Sign up with a User ID (username), password and buddy
+   */
+  async signup(
+    username: string,
+    password: string,
+    buddy: BackendBuddy
+  ): Promise<BackendUser> {
+    return request<BackendUser>('/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify({ username, password, buddy }),
+    });
+  },
+
+  /**
+   * Log in with User ID (username) and password
+   */
+  async login(username: string, password: string): Promise<BackendUser> {
+    return request<BackendUser>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+  },
+
+  /**
+   * Replace the user's taste profile (diets, allergens, cuisines)
+   */
+  async setTasteProfile(
+    userId: number,
+    profile: { diets: string[]; avoid_allergens: string[]; favorite_cuisines: string[] }
+  ): Promise<void> {
+    await request(`/users/${userId}/taste-profile`, {
+      method: 'PUT',
+      body: JSON.stringify(profile),
+    });
+  },
+
+  /**
+   * Change password (requires the current password)
+   */
+  async changePassword(
+    userId: number,
+    currentPassword: string,
+    newPassword: string
+  ): Promise<void> {
+    await request(`/users/${userId}/password`, {
+      method: 'PUT',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+  },
+
+  /**
+   * Waste & spending stats, bucketed by week or month
+   */
+  async getStats(
+    userId: number,
+    period: 'weeks' | 'months',
+    buckets = 6
+  ): Promise<BackendStats> {
+    return request<BackendStats>(`/users/${userId}/stats?period=${period}&buckets=${buckets}`);
+  },
+
+  /**
    * Create a new user
    */
   async createUser(name: string, email: string): Promise<BackendUser> {
@@ -575,7 +668,10 @@ export const backendApi = {
   /**
    * Update user details (name, email)
    */
-  async updateUser(userId: number, updates: { name?: string; email?: string }): Promise<BackendUser> {
+  async updateUser(
+    userId: number,
+    updates: { name?: string; email?: string; username?: string; buddy?: string }
+  ): Promise<BackendUser> {
     return request<BackendUser>(`/users/${userId}`, {
       method: 'PATCH',
       body: JSON.stringify(updates),

@@ -1,8 +1,6 @@
 import React, { createContext, useContext, useState, useMemo, useEffect, useRef, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import { supabase, isSupabaseConfigured } from '../services/supabase/client';
-import { authService } from '../services/supabase/authService';
-import AuthModal from '../components/AuthModal';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { buddyKeyFromBackend } from '../services/foodCharacterLookup';
 import {
   ProfileRow,
   FridgeItemRow,
@@ -28,6 +26,7 @@ import {
   toFrontendFeast,
   toBackendFeastCreate,
   BackendUser,
+  BackendBuddy,
   BackendFeastRead,
   ConnectionDiagnosticResult,
 } from '../services/backendApi';
@@ -93,23 +92,12 @@ interface AppContextType {
   switchBackendUser: (userId: number) => Promise<void>;
   refreshBackendData: (targetUserId?: number) => Promise<void>;
   testBackendDiagnostics: () => Promise<ConnectionDiagnosticResult>;
-  // Supabase Auth State & Actions
-  supabaseUser: User | null;
-  supabaseSession: Session | null;
-  isAuthConfigured: boolean;
-  isAuthModalVisible: boolean;
-  openAuthModal: () => void;
-  closeAuthModal: () => void;
-  logoutFromSupabase: () => Promise<void>;
-  syncSupabaseWithFastApi: (
-    authData: {
-      email: string;
-      displayName: string;
-      username: string;
-      avatarUrl?: string;
-    },
-    isNewUser: boolean
-  ) => Promise<void>;
+  // Auth State & Actions (FastAPI /auth endpoints)
+  isLoggedIn: boolean;
+  signUp: (username: string, password: string, buddy: BackendBuddy) => Promise<BackendUser>;
+  signIn: (username: string, password: string) => Promise<BackendUser>;
+  logout: () => Promise<void>;
+  changeUsername: (newUsername: string) => Promise<void>;
   // Actions
   addShoppingTripFromReceipt: (receipt: ScannedReceiptResult) => Promise<void>;
   addManualFridgeItem: (
@@ -747,15 +735,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [activeBackendUserId, setActiveBackendUserId] = useState<number>(0); // Resolved dynamically from database
   const [availableBackendUsers, setAvailableBackendUsers] = useState<BackendUser[]>([]);
 
-  // Supabase Auth State
-  const [supabaseUser, setSupabaseUser] = useState<User | null>(null);
-  const [supabaseSession, setSupabaseSession] = useState<Session | null>(null);
-  const [isAuthModalVisible, setIsAuthModalVisible] = useState<boolean>(false);
-  const isAuthConfigured = isSupabaseConfigured();
-  const isSyncingAuthRef = useRef<boolean>(false);
+  // Auth State (persisted user id from the FastAPI backend)
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
 
-  const openAuthModal = () => setIsAuthModalVisible(true);
-  const closeAuthModal = () => setIsAuthModalVisible(false);
 
   // Computed Data Source Flags
   const isPantryHardcoded = !backendConnected;
@@ -778,6 +760,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       // 1. Fetch available users from live database
       const users = await backendApi.getUsers(20);
+      const wantedId = targetUserId || activeBackendUserId;
+      if (wantedId && !users.some((u) => u.id === wantedId)) {
+        try {
+          users.push(await backendApi.getUser(wantedId));
+        } catch (userErr) {
+          console.warn('Could not load signed-in user:', userErr);
+        }
+      }
       setAvailableBackendUsers(users);
 
       // 2. Bind current user profile from live database
@@ -794,6 +784,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (foundUser) {
         userProfile = toFrontendProfile(foundUser);
         setCurrentUser(userProfile);
+        const buddyKey = buddyKeyFromBackend(foundUser.buddy);
+        if (buddyKey) {
+          AsyncStorage.setItem(`user_buddy_${foundUser.id}`, buddyKey).catch(() => {});
+        }
       }
 
       // 3. Fetch pantry items for user directly from live database
@@ -891,128 +885,62 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const AUTH_USER_KEY = 'auth_user_id';
+
   /**
-   * Hybrid Bridge: Sync Supabase user with FastAPI backend user model.
-   * Finds matching user by email or creates a new backend user, then updates live data.
+   * Bind a freshly authenticated backend user and load their data.
    */
-  const syncSupabaseWithFastApi = async (
-    authData: {
-      email: string;
-      displayName: string;
-      username: string;
-      avatarUrl?: string;
-    },
-    isNewUser: boolean
-  ) => {
-    if (isSyncingAuthRef.current) return;
-    isSyncingAuthRef.current = true;
-    setIsSyncing(true);
+  const startSession = async (user: BackendUser) => {
     try {
-      // 1. Fetch available backend users to match email
-      const users = await backendApi.getUsers(100);
-      let matchedUser = users.find(
-        (u) => u.email && u.email.trim().toLowerCase() === authData.email.trim().toLowerCase()
-      );
-
-      // 2. If user does not exist yet on FastAPI backend, attempt registration
-      if (!matchedUser) {
-        try {
-          matchedUser = await backendApi.createUser(
-            authData.displayName || authData.username || 'User',
-            authData.email
-          );
-        } catch (createErr: any) {
-          // The live FastAPI server at https://fridge-friends-be.fastapicloud.dev currently
-          // returns 409 "Email already registered" for new POST /users requests.
-          // Gracefully fallback to primary seed user (User #19 Sam Perera) so all live
-          // groceries, friends, and feast mode endpoints continue to work smoothly.
-          console.log('FastAPI user registration note:', createErr.message);
-          matchedUser = users[0];
-        }
-      }
-
-      // 3. Bind active backend user ID and reload live data
-      if (matchedUser) {
-        setActiveBackendUserId(matchedUser.id);
-        await refreshBackendData(matchedUser.id);
-      }
-
-      // 4. Update current user profile in frontend state with Supabase credentials
-      setCurrentUser((prev) => ({
-        ...prev,
-        id: matchedUser ? String(matchedUser.id) : prev.id,
-        display_name: authData.displayName || prev.display_name,
-        username: authData.username || prev.username,
-        email: authData.email || prev.email,
-        avatar_url: authData.avatarUrl || prev.avatar_url,
-      }));
-    } catch (err) {
-      console.warn('Error during Supabase-FastAPI sync:', err);
-    } finally {
-      setIsSyncing(false);
-      isSyncingAuthRef.current = false;
-      setIsAuthModalVisible(false);
-    }
+      await AsyncStorage.setItem(AUTH_USER_KEY, String(user.id));
+    } catch {}
+    setActiveBackendUserId(user.id);
+    setCurrentUser(toFrontendProfile(user));
+    setIsLoggedIn(true);
+    await refreshBackendData(user.id);
   };
 
-  const logoutFromSupabase = async () => {
+  const signUp = async (username: string, password: string, buddy: BackendBuddy) => {
+    const user = await backendApi.signup(username.trim(), password, buddy);
+    await startSession(user);
+    return user;
+  };
+
+  const signIn = async (username: string, password: string) => {
+    const user = await backendApi.login(username.trim(), password);
+    await startSession(user);
+    return user;
+  };
+
+  const changeUsername = async (newUsername: string) => {
+    const updated = await backendApi.updateUser(activeBackendUserId, {
+      username: newUsername.trim(),
+    });
+    setCurrentUser((prev) => ({ ...prev, username: updated.username }));
+  };
+
+  const logout = async () => {
     try {
-      await authService.signOut();
-      setSupabaseUser(null);
-      setSupabaseSession(null);
-      await refreshBackendData();
-    } catch (err) {
-      console.warn('Error during logout:', err);
-    }
+      await AsyncStorage.removeItem(AUTH_USER_KEY);
+    } catch {}
+    setIsLoggedIn(false);
+    setActiveBackendUserId(0);
+    setCurrentUser(initialCurrentUser);
+    await refreshBackendData();
   };
 
   useEffect(() => {
-    refreshBackendData();
-
-    if (isSupabaseConfigured()) {
-      authService.getSession().then((session) => {
-        if (session?.user) {
-          setSupabaseSession(session);
-          setSupabaseUser(session.user);
-          const meta = session.user.user_metadata || {};
-          syncSupabaseWithFastApi(
-            {
-              email: session.user.email || '',
-              displayName: meta.display_name || '',
-              username: meta.username || '',
-              avatarUrl: meta.avatar_url || '',
-            },
-            false
-          );
+    // Restore the previous session (if any), otherwise load the default data
+    AsyncStorage.getItem(AUTH_USER_KEY)
+      .catch(() => null)
+      .then((stored) => {
+        const savedId = stored ? Number(stored) : 0;
+        if (savedId) {
+          setActiveBackendUserId(savedId);
+          setIsLoggedIn(true);
         }
+        return refreshBackendData(savedId || undefined);
       });
-
-      const { data: authListener } = supabase.auth.onAuthStateChange(
-        async (event, session) => {
-          setSupabaseSession(session);
-          setSupabaseUser(session?.user || null);
-          if (event === 'SIGNED_IN' && session?.user) {
-            const meta = session.user.user_metadata || {};
-            syncSupabaseWithFastApi(
-              {
-                email: session.user.email || '',
-                displayName: meta.display_name || '',
-                username: meta.username || '',
-                avatarUrl: meta.avatar_url || '',
-              },
-              false
-            );
-          } else if (event === 'SIGNED_OUT') {
-            setSupabaseUser(null);
-            setSupabaseSession(null);
-          }
-        }
-      );
-
-      return () => {
-        authListener?.subscription?.unsubscribe();
-      };
-    }
   }, []);
 
   const switchBackendUser = async (userId: number) => {
@@ -1208,7 +1136,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // Check if matching backend user exists
     const matchingBackendUser = availableBackendUsers.find(
       (u) =>
-        u.email.toLowerCase().includes(cleanUsername) ||
+        (u.username || '').toLowerCase().includes(cleanUsername) ||
         u.name.toLowerCase().includes(cleanUsername)
     );
     if (matchingBackendUser && backendConnected) {
@@ -1498,18 +1426,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           console.warn('Could not update user on backend:', err);
         });
     }
-
-    if (isAuthConfigured && supabaseUser) {
-      authService
-        .updateProfile({
-          display_name: updates.display_name,
-          username: updates.username,
-          avatar_url: updates.avatar_url,
-        })
-        .catch((err) => {
-          console.warn('Could not update profile in Supabase:', err);
-        });
-    }
   };
 
   const createDinnerPartyRecipe = async (
@@ -1711,15 +1627,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       switchBackendUser,
       refreshBackendData,
       testBackendDiagnostics,
-      // Supabase Auth
-      supabaseUser,
-      supabaseSession,
-      isAuthConfigured,
-      isAuthModalVisible,
-      openAuthModal,
-      closeAuthModal,
-      logoutFromSupabase,
-      syncSupabaseWithFastApi,
+      // Auth
+      isLoggedIn,
+      signUp,
+      signIn,
+      logout,
+      changeUsername,
       addShoppingTripFromReceipt,
       addManualFridgeItem,
       removeFridgeItem,
@@ -1767,21 +1680,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       isFriendsHardcoded,
       isFeastsHardcoded,
       isRecipesHardcoded,
-      supabaseUser,
-      supabaseSession,
-      isAuthConfigured,
-      isAuthModalVisible,
+      isLoggedIn,
     ]
   );
 
   return (
     <AppContext.Provider value={value}>
       {children}
-      <AuthModal
-        visible={isAuthModalVisible}
-        onClose={closeAuthModal}
-        onAuthSuccess={syncSupabaseWithFastApi}
-      />
     </AppContext.Provider>
   );
 };

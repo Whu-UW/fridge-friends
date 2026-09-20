@@ -3,7 +3,6 @@ import {
   View,
   Text,
   ScrollView,
-  TextInput,
   Pressable,
   StyleSheet,
   ActivityIndicator,
@@ -18,53 +17,67 @@ import StickerCard from '../../components/ui/StickerCard';
 import StickerButton from '../../components/ui/StickerButton';
 import FoodCharacter from '../../components/FoodCharacter';
 import ChangeBuddyModal from '../../components/ChangeBuddyModal';
-import { CharacterKey, STARTER_BUDDIES } from '../../services/foodCharacterLookup';
+import AccountEditModal from '../../components/AccountEditModal';
+import { backendApi, BackendStats } from '../../services/backendApi';
+import { CharacterKey, STARTER_BUDDIES, buddyKeyFromBackend, buddyToBackend } from '../../services/foodCharacterLookup';
+
+const DIET_OPTIONS = ['Vegetarian', 'Vegan', 'Pescatarian', 'Gluten-free', 'Dairy-free'];
+const AVOID_OPTIONS = ['Peanuts', 'Shellfish', 'Tree nuts', 'Sesame'];
+const CUISINE_OPTIONS = ['Italian', 'Mexican', 'Korean', 'Indian', 'Mediterranean'];
 
 export default function ProfileYouScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const {
     currentUser,
-    friends,
-    addFriend,
-    getFriendFridgeItems,
     backendSyncAttempted,
+    logout,
+    changeUsername,
   } = useApp();
+  const userId = Number(currentUser.id);
+
+  const handleLogout = () => {
+    Alert.alert('Log out', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Log out',
+        style: 'destructive',
+        onPress: async () => {
+          await logout();
+          await AsyncStorage.removeItem('has_completed_onboarding');
+          router.replace('/login');
+        },
+      },
+    ]);
+  };
 
   // Buddy State
   const [buddyKey, setBuddyKey] = useState<CharacterKey>('can');
   const [buddyName, setBuddyName] = useState('Carl the canned tomatoes');
   const [isChangeBuddyVisible, setIsChangeBuddyVisible] = useState(false);
 
-  // Invite Friend Input
-  const [inviteUserId, setInviteUserId] = useState('');
-  const [isInviting, setIsInviting] = useState(false);
+  // Account edit modal (username / password)
+  const [accountEditMode, setAccountEditMode] = useState<'username' | 'password' | null>(null);
+
+  // Waste & spending stats from backend
+  const [stats, setStats] = useState<BackendStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
 
   // Time Period Toggle for Chart (Weeks vs Months)
   const [period, setPeriod] = useState<'weeks' | 'months'>('weeks');
 
   // Food Preferences Multi-Select State
-  const [selectedDiets, setSelectedDiets] = useState<string[]>(['Pescatarian']);
-  const [selectedAvoids, setSelectedAvoids] = useState<string[]>(['Peanuts']);
-  const [selectedCuisines, setSelectedCuisines] = useState<string[]>([
-    'Italian',
-    'Mexican',
-    'Mediterranean',
-  ]);
+  const [selectedDiets, setSelectedDiets] = useState<string[]>([]);
+  const [selectedAvoids, setSelectedAvoids] = useState<string[]>([]);
+  const [selectedCuisines, setSelectedCuisines] = useState<string[]>([]);
   const [isSavingPrefs, setIsSavingPrefs] = useState(false);
   const [prefsSavedSuccess, setPrefsSavedSuccess] = useState(false);
 
-  // Load saved preferences on mount
+  // Load buddy + food preferences from the backend (local copy is a fallback)
   useEffect(() => {
-    const loadSavedPrefs = async () => {
+    const loadProfile = async () => {
       try {
-        const stored = await AsyncStorage.getItem(`user_preferences_${currentUser.id}`);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed.diets) setSelectedDiets(parsed.diets);
-          if (parsed.avoids) setSelectedAvoids(parsed.avoids);
-          if (parsed.cuisines) setSelectedCuisines(parsed.cuisines);
-        }
         const storedBuddy = await AsyncStorage.getItem(`user_buddy_${currentUser.id}`);
         if (storedBuddy) {
           setBuddyKey(storedBuddy as CharacterKey);
@@ -72,25 +85,68 @@ export default function ProfileYouScreen() {
           if (found) setBuddyName(found.desc);
         }
       } catch {}
+
+      if (!userId) return;
+      try {
+        const user = await backendApi.getUser(userId);
+        const key = buddyKeyFromBackend(user.buddy);
+        if (key) {
+          setBuddyKey(key);
+          const found = STARTER_BUDDIES.find((b) => b.key === key);
+          if (found) setBuddyName(found.desc);
+          AsyncStorage.setItem(`user_buddy_${currentUser.id}`, key).catch(() => {});
+        }
+        const norm = (v: string) => v.toLowerCase().replace(/[-\s]/g, '_');
+        const pick = (options: string[], saved?: string[]) =>
+          options.filter((o) => (saved || []).map(norm).includes(norm(o)));
+        setSelectedDiets(pick(DIET_OPTIONS, user.diets));
+        setSelectedAvoids(pick(AVOID_OPTIONS, user.avoid_allergens));
+        setSelectedCuisines(pick(CUISINE_OPTIONS, user.favorite_cuisines));
+      } catch (err) {
+        console.warn('Could not load profile from backend:', err);
+      }
     };
-    loadSavedPrefs();
+    loadProfile();
   }, [currentUser.id]);
+
+  // Load waste & spending stats whenever the weeks/months toggle changes
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    setStatsLoading(true);
+    setStatsError(null);
+    backendApi
+      .getStats(userId, period, 6)
+      .then((res) => {
+        if (!cancelled) setStats(res);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setStats(null);
+          setStatsError(err?.message || 'Could not load stats.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setStatsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, period]);
 
   const handleSavePreferences = async () => {
     setIsSavingPrefs(true);
     try {
-      await AsyncStorage.setItem(
-        `user_preferences_${currentUser.id}`,
-        JSON.stringify({
-          diets: selectedDiets,
-          avoids: selectedAvoids,
-          cuisines: selectedCuisines,
-        })
-      );
+      const norm = (v: string) => v.toLowerCase().replace(/[-\s]/g, '_');
+      await backendApi.setTasteProfile(userId, {
+        diets: selectedDiets.map(norm),
+        avoid_allergens: selectedAvoids.map(norm),
+        favorite_cuisines: selectedCuisines,
+      });
       setPrefsSavedSuccess(true);
       setTimeout(() => setPrefsSavedSuccess(false), 3000);
-    } catch {
-      Alert.alert('Save Failed', 'Could not save preferences.');
+    } catch (err: any) {
+      Alert.alert('Save Failed', err?.message || 'Could not save preferences.');
     } finally {
       setIsSavingPrefs(false);
     }
@@ -114,37 +170,11 @@ export default function ProfileYouScreen() {
     );
   };
 
-  const handleInviteFriend = () => {
-    const trimmed = inviteUserId.trim().replace('@', '');
-    if (!trimmed) {
-      Alert.alert('User ID Required', 'Please enter a friend’s user ID to invite.');
-      return;
-    }
-
-    setIsInviting(true);
-    try {
-      addFriend(trimmed);
-      setInviteUserId('');
-      Alert.alert(
-        'Invite Sent! 🎉',
-        `Sent friend invite to @${trimmed}. Once accepted, you can cook feasts together!`
-      );
-    } catch {
-      Alert.alert('Error', 'Could not send friend request.');
-    } finally {
-      setIsInviting(false);
-    }
-  };
-
-  // Stacked Bar Data (Sample numbers matching Screen 7 in design spec)
-  const chartWeeks = [
-    { label: 'W1', spent: 58, wasted: 18 },
-    { label: 'W2', spent: 65, wasted: 8 },
-    { label: 'W3', spent: 48, wasted: 12 },
-    { label: 'W4', spent: 72, wasted: 6 },
-    { label: 'W5', spent: 55, wasted: 8 },
-    { label: 'W6', spent: 62, wasted: 4 },
-  ];
+  // Chart scale and rescued totals from backend stats
+  const buckets = stats?.buckets ?? [];
+  const chartMax = Math.max(1, ...buckets.map((b) => b.spent));
+  const buddiesSaved = buckets.reduce((sum, b) => sum + b.items_rescued, 0);
+  const money = (n: number) => `$${Math.round(n)}`;
 
   if (!backendSyncAttempted) {
     return (
@@ -196,14 +226,12 @@ export default function ProfileYouScreen() {
             {/* User ID Row */}
             <View style={styles.accountRow}>
               <View>
-                <Text style={styles.accountLabel}>User ID</Text>
+                <Text style={styles.accountLabel}>Username</Text>
                 <Text style={styles.accountValue}>@{currentUser.username || 'pantry.pal'}</Text>
               </View>
               <Pressable
                 style={styles.accountActionBtn}
-                onPress={() =>
-                  Alert.alert('Edit User ID', `Current user ID is @${currentUser.username}`)
-                }
+                onPress={() => setAccountEditMode('username')}
               >
                 <Text style={styles.accountActionText}>Edit</Text>
               </Pressable>
@@ -217,7 +245,7 @@ export default function ProfileYouScreen() {
               </View>
               <Pressable
                 style={styles.accountActionBtn}
-                onPress={() => Alert.alert('Change Password', 'Password change request initiated.')}
+                onPress={() => setAccountEditMode('password')}
               >
                 <Text style={styles.accountActionText}>Change</Text>
               </Pressable>
@@ -237,7 +265,7 @@ export default function ProfileYouScreen() {
                     params: {
                       buddyKey,
                       buddyName: buddyName.split(' ')[0],
-                      userId: currentUser.username,
+                      userId: currentUser.id,
                     },
                   })
                 }
@@ -248,77 +276,6 @@ export default function ProfileYouScreen() {
           </StickerCard>
         </View>
 
-        {/* SECTION 3: Friends */}
-        <View style={styles.sectionBlock}>
-          <Text style={styles.sectionHeading}>Friends ({friends.length})</Text>
-          <StickerCard backgroundColor={Colors.paper} borderRadius={22} style={styles.friendsCard}>
-            {friends.length === 0 ? (
-              <View style={styles.emptyFriendsBox}>
-                <Text style={styles.emptyFriendsTitle}>No friends added yet</Text>
-                <Text style={styles.emptyFriendsSub}>
-                  Invite a friend below using their user ID to view their shared fridge and plan feasts together!
-                </Text>
-              </View>
-            ) : (
-              friends.map((friend, idx) => {
-                const initial = friend.display_name.charAt(0).toUpperCase();
-                const isLast = idx === friends.length - 1;
-                const friendItems = getFriendFridgeItems(friend.id);
-
-                return (
-                  <Pressable
-                    key={friend.id}
-                    style={[styles.friendItemRow, !isLast && styles.friendItemBorder]}
-                    onPress={() =>
-                      router.push({
-                        pathname: '/friend/[id]',
-                        params: { id: friend.id },
-                      })
-                    }
-                  >
-                    <View style={styles.friendInitialCircle}>
-                      <Text style={styles.friendInitialText}>{initial}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.friendItemName}>{friend.display_name.split(' ')[0]}</Text>
-                      <Text style={styles.friendItemSub}>
-                        {friendItems.length === 0
-                          ? 'Empty fridge'
-                          : `${friendItems.length} ${friendItems.length === 1 ? 'item' : 'items'} in fridge`}
-                      </Text>
-                    </View>
-                    <Text style={styles.friendChevron}>›</Text>
-                  </Pressable>
-                );
-              })
-            )}
-          </StickerCard>
-
-          {/* Invite a Friend Input Box */}
-          <Text style={styles.inviteLabel}>Invite a friend</Text>
-          <View style={styles.inviteInputRow}>
-            <TextInput
-              style={styles.inviteInput}
-              placeholder="Their user ID"
-              placeholderTextColor={Colors.placeholder}
-              value={inviteUserId}
-              onChangeText={setInviteUserId}
-              autoCapitalize="none"
-            />
-            <Pressable
-              style={styles.inviteBtn}
-              onPress={handleInviteFriend}
-              disabled={isInviting}
-            >
-              <Text style={styles.inviteBtnText}>Invite</Text>
-            </Pressable>
-          </View>
-
-          <Text style={styles.privacyNote}>
-            Friends can see your yellow and red buddies so they can cook with you. Prices stay private.
-          </Text>
-        </View>
-
         {/* SECTION 4: Food Preferences */}
         <View style={styles.sectionBlock}>
           <Text style={styles.sectionHeading}>Food preferences</Text>
@@ -326,7 +283,7 @@ export default function ProfileYouScreen() {
           {/* Diet */}
           <Text style={styles.prefCategoryTitle}>Diet</Text>
           <View style={styles.chipsWrap}>
-            {['Vegetarian', 'Vegan', 'Pescatarian', 'Gluten-free', 'Dairy-free'].map((diet) => {
+            {DIET_OPTIONS.map((diet) => {
               const isSelected = selectedDiets.includes(diet);
               return (
                 <Pressable
@@ -345,7 +302,7 @@ export default function ProfileYouScreen() {
           {/* Always avoid */}
           <Text style={styles.prefCategoryTitle}>Always avoid</Text>
           <View style={styles.chipsWrap}>
-            {['Peanuts', 'Shellfish', 'Tree nuts', 'Sesame'].map((avoid) => {
+            {AVOID_OPTIONS.map((avoid) => {
               const isSelected = selectedAvoids.includes(avoid);
               return (
                 <Pressable
@@ -364,7 +321,7 @@ export default function ProfileYouScreen() {
           {/* Cuisines I love */}
           <Text style={styles.prefCategoryTitle}>Cuisines I love</Text>
           <View style={styles.chipsWrap}>
-            {['Italian', 'Mexican', 'Korean', 'Indian', 'Mediterranean'].map((cuisine) => {
+            {CUISINE_OPTIONS.map((cuisine) => {
               const isSelected = selectedCuisines.includes(cuisine);
               return (
                 <Pressable
@@ -431,64 +388,96 @@ export default function ProfileYouScreen() {
             </View>
           </View>
 
-          {/* 3 KPI Stat Cards */}
-          <View style={styles.kpiCardsRow}>
-            <StickerCard backgroundColor={Colors.paper} borderRadius={18} style={styles.kpiCard}>
-              <Text style={styles.kpiLabel}>Spent</Text>
-              <Text style={styles.kpiValue}>$312</Text>
-            </StickerCard>
+          {statsLoading && !stats ? (
+            <ActivityIndicator color={Colors.terracotta} style={{ marginVertical: 24 }} />
+          ) : statsError || !stats ? (
+            <Text style={styles.wasteTrendText}>
+              {statsError ? `Could not load your stats: ${statsError}` : 'No stats yet.'}
+            </Text>
+          ) : (
+            <>
+              {/* Spent - Wasted - Rescued */}
+              <View style={styles.kpiCardsRow}>
+                <StickerCard backgroundColor={Colors.paper} borderRadius={18} style={styles.kpiCard}>
+                  <Text style={styles.kpiLabel}>Spent</Text>
+                  <Text style={styles.kpiValue}>{money(stats.spent)}</Text>
+                </StickerCard>
 
-            <StickerCard backgroundColor={Colors.paper} borderRadius={18} style={styles.kpiCard}>
-              <Text style={styles.kpiLabel}>Wasted</Text>
-              <Text style={[styles.kpiValue, { color: Colors.terracotta }]}>$27</Text>
-            </StickerCard>
+                <StickerCard backgroundColor={Colors.paper} borderRadius={18} style={styles.kpiCard}>
+                  <Text style={styles.kpiLabel}>Wasted</Text>
+                  <Text style={[styles.kpiValue, { color: Colors.terracotta }]}>
+                    {money(stats.wasted)}
+                  </Text>
+                </StickerCard>
 
-            <StickerCard backgroundColor={Colors.paper} borderRadius={18} style={styles.kpiCard}>
-              <Text style={styles.kpiLabel}>Rescued</Text>
-              <Text style={[styles.kpiValue, { color: Colors.fresh.text }]}>$41</Text>
-            </StickerCard>
-          </View>
+                <StickerCard backgroundColor={Colors.paper} borderRadius={18} style={styles.kpiCard}>
+                  <Text style={styles.kpiLabel}>Rescued</Text>
+                  <Text style={[styles.kpiValue, { color: Colors.fresh.text }]}>
+                    {money(stats.rescued)}
+                  </Text>
+                </StickerCard>
+              </View>
 
-          {/* Stacked Bar Chart */}
-          <StickerCard backgroundColor={Colors.paper} borderRadius={22} style={styles.chartCard}>
-            <View style={styles.barsContainer}>
-              {chartWeeks.map((bar, bIdx) => {
-                const totalHeight = (bar.spent / 80) * 110;
-                const wastedHeight = (bar.wasted / 80) * 110;
-                const usedHeight = totalHeight - wastedHeight;
+              {/* Total buddies saved */}
+              <StickerCard backgroundColor={Colors.paper} borderRadius={18} style={styles.buddiesSavedCard}>
+                <Text style={styles.kpiLabel}>Total buddies saved</Text>
+                <Text style={[styles.kpiValue, { color: Colors.fresh.text }]}>{buddiesSaved}</Text>
+              </StickerCard>
 
-                return (
-                  <View key={bIdx} style={styles.barColumn}>
-                    <View style={[styles.barPillar, { height: totalHeight }]}>
-                      {/* Top Wasted Segment */}
-                      <View style={[styles.wastedSegment, { height: wastedHeight }]} />
-                      {/* Lower Spent & Used Segment */}
-                      <View style={[styles.spentSegment, { height: usedHeight }]} />
-                    </View>
-                    <Text style={styles.barLabel}>{bar.label}</Text>
+              {/* Stacked Bar Chart */}
+              <StickerCard backgroundColor={Colors.paper} borderRadius={22} style={styles.chartCard}>
+                <View style={styles.barsContainer}>
+                  {buckets.map((bar, bIdx) => {
+                    const totalHeight = (bar.spent / chartMax) * 110;
+                    const wastedHeight = (bar.wasted / chartMax) * 110;
+                    const usedHeight = totalHeight - wastedHeight;
+
+                    return (
+                      <View key={bIdx} style={styles.barColumn}>
+                        <View style={[styles.barPillar, { height: totalHeight }]}>
+                          <View style={[styles.wastedSegment, { height: wastedHeight }]} />
+                          <View style={[styles.spentSegment, { height: usedHeight }]} />
+                        </View>
+                        <Text style={styles.barLabel}>{bar.label}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+
+                <View style={styles.legendRow}>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendBox, { backgroundColor: Colors.sage }]} />
+                    <Text style={styles.legendText}>Spent and used</Text>
                   </View>
-                );
-              })}
-            </View>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendBox, { backgroundColor: Colors.terracotta }]} />
+                    <Text style={styles.legendText}>Wasted</Text>
+                  </View>
+                </View>
+              </StickerCard>
 
-            {/* Legend */}
-            <View style={styles.legendRow}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendBox, { backgroundColor: Colors.sage }]} />
-                <Text style={styles.legendText}>Spent and used</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendBox, { backgroundColor: Colors.terracotta }]} />
-                <Text style={styles.legendText}>Wasted</Text>
-              </View>
-            </View>
-          </StickerCard>
-
-          <Text style={styles.wasteTrendText}>
-            Waste is down from 17% of spending to 3% over six weeks.
-          </Text>
+              <Text style={styles.wasteTrendText}>{stats.summary}</Text>
+              {stats.unpriced_items > 0 && (
+                <Text style={styles.wasteTrendText}>
+                  {stats.unpriced_items} {stats.unpriced_items === 1 ? 'item has' : 'items have'} no
+                  price and {stats.unpriced_items === 1 ? 'is' : 'are'} not counted.
+                </Text>
+              )}
+            </>
+          )}
         </View>
+
+        {/* SECTION 6: Log out */}
+        <StickerButton title="Log out" onPress={handleLogout} variant="danger" size="large" />
       </ScrollView>
+
+      <AccountEditModal
+        mode={accountEditMode}
+        currentUsername={currentUser.username}
+        onSaveUsername={changeUsername}
+        onSavePassword={(current, next) => backendApi.changePassword(userId, current, next)}
+        onClose={() => setAccountEditMode(null)}
+      />
 
       {/* Change Buddy Modal */}
       <ChangeBuddyModal
@@ -499,6 +488,12 @@ export default function ProfileYouScreen() {
           const found = STARTER_BUDDIES.find((b) => b.key === key);
           setBuddyName(found ? found.desc : name);
           AsyncStorage.setItem(`user_buddy_${currentUser.id}`, key);
+          const backendBuddy = buddyToBackend(key);
+          if (backendBuddy && userId) {
+            backendApi.updateUser(userId, { buddy: backendBuddy }).catch((err) => {
+              Alert.alert('Could not save buddy', err?.message || 'Please try again.');
+            });
+          }
         }}
         onClose={() => setIsChangeBuddyVisible(false)}
       />
@@ -875,6 +870,11 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bodySemiBold,
     fontSize: 13,
     color: Colors.ink,
+  },
+  buddiesSavedCard: {
+    padding: 12,
+    alignItems: 'center',
+    marginBottom: 12,
   },
   wasteTrendText: {
     fontFamily: Fonts.bodyRegular,
