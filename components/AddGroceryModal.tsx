@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,6 @@ import {
 import { Colors, Fonts } from '../constants/Theme';
 import StickerCard from './ui/StickerCard';
 import StickerButton from './ui/StickerButton';
-import FoodCharacter from './FoodCharacter';
 import CalendarPickerModal from './CalendarPickerModal';
 import { lookupFoodCharacter } from '../services/foodCharacterLookup';
 
@@ -36,37 +35,19 @@ export default function AddGroceryModal({
   onAdd,
 }: AddGroceryModalProps) {
   const [name, setName] = useState('');
-  const [price, setPrice] = useState('3.49');
+  const [price, setPrice] = useState('');
   const [dateBought, setDateBought] = useState(new Date().toISOString().slice(0, 10));
   const [dateExpired, setDateExpired] = useState('');
-  const [isCustomExpiry, setIsCustomExpiry] = useState(false);
   const [calendarTarget, setCalendarTarget] = useState<'bought' | 'expired'>('bought');
   const [isCalendarVisible, setIsCalendarVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Live lookup
-  const lookup = lookupFoodCharacter(name || 'Spinach');
-
-  // Compute default expiry based on dateBought + shelf life days
-  const computedExpiryDate = useMemo(() => {
-    try {
-      const boughtMs = new Date(dateBought).getTime();
-      const expMs = boughtMs + lookup.defaultShelfLifeDays * 864e5;
-      return new Date(expMs).toISOString().slice(0, 10);
-    } catch {
-      return dateBought;
-    }
-  }, [dateBought, lookup.defaultShelfLifeDays]);
-
-  const effectiveExpiryDate = isCustomExpiry && dateExpired ? dateExpired : computedExpiryDate;
-
   useEffect(() => {
     if (visible) {
       setName('');
-      setPrice('3.49');
+      setPrice('');
       setDateBought(new Date().toISOString().slice(0, 10));
       setDateExpired('');
-      setIsCustomExpiry(false);
       setCalendarTarget('bought');
     }
   }, [visible]);
@@ -89,20 +70,39 @@ export default function AddGroceryModal({
     }
 
     const parsedPrice = parseFloat(price);
-    const validPrice = isNaN(parsedPrice) || parsedPrice <= 0 ? 3.49 : parsedPrice;
+    if (isNaN(parsedPrice) || parsedPrice < 0) {
+      Alert.alert('Required Field', 'Please enter a valid price (e.g. 3.49).');
+      return;
+    }
+
+    if (!dateBought) {
+      Alert.alert('Required Field', 'Please select a date bought.');
+      return;
+    }
+
+    if (!dateExpired) {
+      Alert.alert('Required Field', 'Please select an expiration date.');
+      return;
+    }
+
+    const boughtMs = new Date(dateBought).getTime();
+    const expMs = new Date(dateExpired).getTime();
+    if (expMs < boughtMs) {
+      Alert.alert('Invalid Date', 'Expiration date cannot be earlier than date bought.');
+      return;
+    }
+
+    const lookup = lookupFoodCharacter(trimmed);
+    const diffDays = Math.max(1, Math.round((expMs - boughtMs) / 864e5));
 
     setIsSubmitting(true);
     try {
       const fullIsoBoughtDate = new Date(dateBought).toISOString();
-      const fullIsoExpiresDate = new Date(effectiveExpiryDate).toISOString();
-      const diffDays = Math.max(
-        1,
-        Math.round((new Date(effectiveExpiryDate).getTime() - new Date(dateBought).getTime()) / 864e5)
-      );
+      const fullIsoExpiresDate = new Date(dateExpired).toISOString();
 
       await onAdd(
         trimmed,
-        validPrice,
+        parsedPrice,
         fullIsoBoughtDate,
         lookup.category,
         diffDays,
@@ -153,7 +153,7 @@ export default function AddGroceryModal({
                 <Text style={styles.currencySymbol}>$</Text>
                 <TextInput
                   style={[styles.textInput, { paddingLeft: 4 }]}
-                  placeholder="3.49"
+                  placeholder="0.00"
                   placeholderTextColor={Colors.placeholder}
                   keyboardType="decimal-pad"
                   value={price}
@@ -187,7 +187,9 @@ export default function AddGroceryModal({
                     setIsCalendarVisible(true);
                   }}
                 >
-                  <Text style={styles.dateText}>{formatDisplayDate(effectiveExpiryDate)}</Text>
+                  <Text style={[styles.dateText, !dateExpired && styles.placeholderText]}>
+                    {dateExpired ? formatDisplayDate(dateExpired) : 'Select date'}
+                  </Text>
                   <Text style={styles.calendarIcon}>📅</Text>
                 </Pressable>
               </View>
@@ -196,25 +198,6 @@ export default function AddGroceryModal({
             <Text style={styles.dateSubtext}>
               Tap either date to change it on the calendar.
             </Text>
-
-            {/* Live Character Preview Card */}
-            <View style={styles.previewCard}>
-              <FoodCharacter
-                foodKey={lookup.characterKey}
-                mood="happy"
-                size={56}
-                animate={false}
-              />
-              <View style={styles.previewMeta}>
-                <Text style={styles.previewHeading}>Its freshness timer starts today</Text>
-                <Text style={styles.previewSub}>We pick a shelf buddy for it.</Text>
-                <View style={styles.categoryBadge}>
-                  <Text style={styles.categoryBadgeText}>
-                    {lookup.categoryLabel} · ~{lookup.defaultShelfLifeDays} days
-                  </Text>
-                </View>
-              </View>
-            </View>
 
             {/* Submit Button */}
             <View style={styles.btnStack}>
@@ -236,13 +219,12 @@ export default function AddGroceryModal({
         {/* Date Picker Modal */}
         <CalendarPickerModal
           visible={isCalendarVisible}
-          selectedDate={calendarTarget === 'bought' ? dateBought : effectiveExpiryDate}
+          selectedDate={calendarTarget === 'bought' ? dateBought : (dateExpired || dateBought)}
           onSelectDate={(newDate) => {
             if (calendarTarget === 'bought') {
               setDateBought(newDate);
             } else {
               setDateExpired(newDate);
-              setIsCustomExpiry(true);
             }
             setIsCalendarVisible(false);
           }}
@@ -337,6 +319,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.ink,
   },
+  placeholderText: {
+    color: Colors.placeholder,
+    fontFamily: Fonts.bodyRegular,
+  },
   calendarIcon: {
     fontSize: 16,
   },
@@ -345,46 +331,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#7A6B5F',
     marginTop: -4,
-    marginBottom: 16,
-  },
-  previewCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8F1E4',
-    borderWidth: 2,
-    borderColor: Colors.ink,
-    borderRadius: 18,
-    padding: 12,
     marginBottom: 20,
-    gap: 12,
-  },
-  previewMeta: {
-    flex: 1,
-  },
-  previewHeading: {
-    fontFamily: Fonts.headingSemiBold,
-    fontSize: 14,
-    color: Colors.ink,
-  },
-  previewSub: {
-    fontFamily: Fonts.bodyRegular,
-    fontSize: 12,
-    color: '#6E5C50',
-    marginBottom: 6,
-  },
-  categoryBadge: {
-    backgroundColor: '#EBE0CE',
-    borderWidth: 1.5,
-    borderColor: Colors.ink,
-    borderRadius: 12,
-    paddingVertical: 2,
-    paddingHorizontal: 8,
-    alignSelf: 'flex-start',
-  },
-  categoryBadgeText: {
-    fontFamily: Fonts.headingMedium,
-    fontSize: 12,
-    color: Colors.ink,
   },
   btnStack: {
     gap: 8,

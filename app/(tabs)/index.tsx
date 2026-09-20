@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../context/AppContext';
 import { Colors, Fonts, Radius } from '../../constants/Theme';
@@ -75,7 +76,7 @@ export default function ShelfScreen() {
   const [isAddMenuVisible, setIsAddMenuVisible] = useState(false);
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
   const [isScanModalVisible, setIsScanModalVisible] = useState(false);
-  const [scanSource, setScanSource] = useState<'camera' | 'library' | null>(null);
+  const [scanImagePayload, setScanImagePayload] = useState<{ base64: string; mimeType: string } | null>(null);
   const [selectedItemForRemove, setSelectedItemForRemove] = useState<FridgeItemRow | null>(null);
   const [isFriendReqModalVisible, setIsFriendReqModalVisible] = useState(false);
 
@@ -172,6 +173,60 @@ export default function ShelfScreen() {
 
   const handleAddReceipt = async (receipt: ScannedReceiptResult) => {
     await addShoppingTripFromReceipt(receipt);
+  };
+
+  const handleSelectScanCamera = async () => {
+    setIsAddMenuVisible(false);
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Camera Permission Required', 'Camera access is required to take receipt photos.');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        base64: true,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]?.base64) {
+        setScanImagePayload({
+          base64: result.assets[0].base64,
+          mimeType: result.assets[0].mimeType || 'image/jpeg',
+        });
+        setIsScanModalVisible(true);
+      }
+    } catch {
+      Alert.alert('Camera Error', 'Could not open camera.');
+    }
+  };
+
+  const handleSelectUploadPhoto = async () => {
+    setIsAddMenuVisible(false);
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Gallery Permission Required', 'Gallery access is needed to select receipt photos.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        base64: true,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]?.base64) {
+        setScanImagePayload({
+          base64: result.assets[0].base64,
+          mimeType: result.assets[0].mimeType || 'image/jpeg',
+        });
+        setIsScanModalVisible(true);
+      }
+    } catch {
+      Alert.alert('Gallery Error', 'Could not access photo library.');
+    }
   };
 
   if (!backendSyncAttempted) {
@@ -348,16 +403,8 @@ export default function ShelfScreen() {
           setIsAddMenuVisible(false);
           setIsAddModalVisible(true);
         }}
-        onSelectScanCamera={() => {
-          setIsAddMenuVisible(false);
-          setScanSource('camera');
-          setIsScanModalVisible(true);
-        }}
-        onSelectUploadPhoto={() => {
-          setIsAddMenuVisible(false);
-          setScanSource('library');
-          setIsScanModalVisible(true);
-        }}
+        onSelectScanCamera={handleSelectScanCamera}
+        onSelectUploadPhoto={handleSelectUploadPhoto}
       />
 
       <AddGroceryModal
@@ -368,10 +415,10 @@ export default function ShelfScreen() {
 
       <ScanReceiptModal
         visible={isScanModalVisible}
-        initialSource={scanSource}
+        imagePayload={scanImagePayload}
         onClose={() => {
           setIsScanModalVisible(false);
-          setScanSource(null);
+          setScanImagePayload(null);
         }}
         onAddItems={handleAddReceipt}
       />

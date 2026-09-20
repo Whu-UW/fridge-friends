@@ -29,6 +29,7 @@ import { lookupFoodCharacter } from '../services/foodCharacterLookup';
 
 interface ScanReceiptModalProps {
   visible: boolean;
+  imagePayload?: { base64: string; mimeType: string } | null;
   initialSource?: 'camera' | 'library' | null;
   onClose: () => void;
   onAddItems: (receipt: ScannedReceiptResult) => Promise<void>;
@@ -45,6 +46,7 @@ const CATEGORY_PRESETS = [
 
 export default function ScanReceiptModal({
   visible,
+  imagePayload,
   initialSource,
   onClose,
   onAddItems,
@@ -55,18 +57,24 @@ export default function ScanReceiptModal({
   const [tripDate, setTripDate] = useState(new Date().toISOString().slice(0, 10));
   const [isCalendarVisible, setIsCalendarVisible] = useState(false);
   const [scannedItems, setScannedItems] = useState<ScannedReceiptItem[]>([]);
+  const [rawPrices, setRawPrices] = useState<Record<number, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const hasTriggeredRef = useRef(false);
 
-  // Trigger camera or library automatically if opened with an initial source
+  // Trigger scanning with imagePayload or fallback to initial source
   useEffect(() => {
-    if (visible && initialSource && !hasTriggeredRef.current) {
-      hasTriggeredRef.current = true;
-      if (initialSource === 'camera') {
-        handleTakePhoto();
-      } else if (initialSource === 'library') {
-        handleUploadPhoto();
+    if (visible) {
+      if (imagePayload?.base64 && !hasTriggeredRef.current) {
+        hasTriggeredRef.current = true;
+        processImage(imagePayload.base64, imagePayload.mimeType || 'image/jpeg');
+      } else if (initialSource && !hasTriggeredRef.current) {
+        hasTriggeredRef.current = true;
+        if (initialSource === 'camera') {
+          handleTakePhoto();
+        } else if (initialSource === 'library') {
+          handleUploadPhoto();
+        }
       }
     }
     if (!visible) {
@@ -74,10 +82,11 @@ export default function ScanReceiptModal({
       setIsScanning(false);
       setStatusText('');
       setScannedItems([]);
+      setRawPrices({});
       setStoreName('Grocery Store');
       setTripDate(new Date().toISOString().slice(0, 10));
     }
-  }, [visible, initialSource]);
+  }, [visible, imagePayload, initialSource]);
 
   const handleTakePhoto = async () => {
     try {
@@ -137,6 +146,11 @@ export default function ScanReceiptModal({
       setStoreName(mock.storeName || 'Trader Joe’s');
       setTripDate(mock.tripDate ? mock.tripDate.slice(0, 10) : new Date().toISOString().slice(0, 10));
       setScannedItems(mock.items);
+      const initialRaw: Record<number, string> = {};
+      mock.items.forEach((item, i) => {
+        initialRaw[i] = item.price > 0 ? item.price.toString() : '';
+      });
+      setRawPrices(initialRaw);
     } finally {
       setIsScanning(false);
       setStatusText('');
@@ -147,23 +161,31 @@ export default function ScanReceiptModal({
     setIsScanning(true);
     setStatusText('Analyzing receipt with Gemini...');
     try {
+      let result: ScannedReceiptResult;
       if (isGeminiKeyConfigured()) {
-        const result = await scanGroceryReceiptWithGemini(base64, mimeType, (msg) => setStatusText(msg));
-        setStoreName(result.storeName || 'Grocery Store');
-        setTripDate(result.tripDate ? result.tripDate.slice(0, 10) : new Date().toISOString().slice(0, 10));
-        setScannedItems(result.items);
+        result = await scanGroceryReceiptWithGemini(base64, mimeType, (msg) => setStatusText(msg));
       } else {
-        const mock = await scanGroceryReceiptMock();
-        setStoreName(mock.storeName || 'Grocery Store');
-        setTripDate(mock.tripDate ? mock.tripDate.slice(0, 10) : new Date().toISOString().slice(0, 10));
-        setScannedItems(mock.items);
+        result = await scanGroceryReceiptMock();
       }
+      setStoreName(result.storeName || 'Grocery Store');
+      setTripDate(result.tripDate ? result.tripDate.slice(0, 10) : new Date().toISOString().slice(0, 10));
+      setScannedItems(result.items);
+      const initialRaw: Record<number, string> = {};
+      result.items.forEach((item, i) => {
+        initialRaw[i] = item.price > 0 ? item.price.toString() : '';
+      });
+      setRawPrices(initialRaw);
     } catch (err: any) {
       Alert.alert('Receipt Scan Notice', 'Gemini encountered a problem parsing the receipt. Loaded demo items to continue.');
       const mock = await scanGroceryReceiptMock();
       setStoreName(mock.storeName || 'Grocery Store');
       setTripDate(mock.tripDate ? mock.tripDate.slice(0, 10) : new Date().toISOString().slice(0, 10));
       setScannedItems(mock.items);
+      const initialRaw: Record<number, string> = {};
+      mock.items.forEach((item, i) => {
+        initialRaw[i] = item.price > 0 ? item.price.toString() : '';
+      });
+      setRawPrices(initialRaw);
     } finally {
       setIsScanning(false);
       setStatusText('');
@@ -183,9 +205,10 @@ export default function ScanReceiptModal({
   };
 
   const handleUpdateItemPrice = (index: number, newPriceStr: string) => {
+    setRawPrices((prev) => ({ ...prev, [index]: newPriceStr }));
+    const parsed = parseFloat(newPriceStr);
     setScannedItems((prev) => {
       const updated = [...prev];
-      const parsed = parseFloat(newPriceStr);
       updated[index] = {
         ...updated[index],
         price: isNaN(parsed) ? 0 : parsed,
@@ -213,29 +236,50 @@ export default function ScanReceiptModal({
 
   const handleRemoveItem = (index: number) => {
     setScannedItems((prev) => prev.filter((_, idx) => idx !== index));
+    setRawPrices((prev) => {
+      const updated: Record<number, string> = {};
+      let nextI = 0;
+      Object.keys(prev)
+        .map(Number)
+        .sort((a, b) => a - b)
+        .forEach((i) => {
+          if (i !== index) {
+            updated[nextI] = prev[i];
+            nextI++;
+          }
+        });
+      return updated;
+    });
   };
 
   const handleAddNewItem = () => {
+    const nextIdx = scannedItems.length;
     setScannedItems((prev) => [
       ...prev,
       {
         name: '',
-        price: 3.49,
+        price: 0,
         category: 'Produce',
         shelfLifeDays: 7,
       },
     ]);
+    setRawPrices((prev) => ({ ...prev, [nextIdx]: '' }));
   };
 
   const handleClose = () => {
     setScannedItems([]);
+    setRawPrices({});
     setStatusText('');
     onClose();
   };
 
   const calculatedTotal = useMemo(() => {
-    return scannedItems.reduce((sum, item) => sum + (item.price || 0), 0);
-  }, [scannedItems]);
+    return scannedItems.reduce((sum, item, idx) => {
+      const raw = rawPrices[idx];
+      const parsed = raw !== undefined && raw !== '' ? parseFloat(raw) : item.price;
+      return sum + (typeof parsed === 'number' && !isNaN(parsed) && parsed > 0 ? parsed : 0);
+    }, 0);
+  }, [scannedItems, rawPrices]);
 
   const handleAddAllToShelf = async () => {
     if (scannedItems.length === 0) {
@@ -245,16 +289,20 @@ export default function ScanReceiptModal({
 
     const cleanedItems = scannedItems
       .filter((item) => item.name.trim().length > 0)
-      .map((item) => ({
-        ...item,
-        name: item.name.trim(),
-        price: typeof item.price === 'number' && item.price >= 0 ? item.price : 3.49,
-        category: item.category || 'Produce',
-        shelfLifeDays: item.shelfLifeDays || 7,
-      }));
+      .map((item, idx) => {
+        const raw = rawPrices[idx];
+        const parsed = raw !== undefined && raw !== '' ? parseFloat(raw) : item.price;
+        return {
+          ...item,
+          name: item.name.trim(),
+          price: typeof parsed === 'number' && !isNaN(parsed) && parsed >= 0 ? parsed : (item.price >= 0 ? item.price : 0),
+          category: item.category || 'Produce',
+          shelfLifeDays: item.shelfLifeDays || 7,
+        };
+      });
 
     if (cleanedItems.length === 0) {
-      Alert.alert('Incomplete Items', 'Please ensure items have a valid name.');
+      Alert.alert('Incomplete Items', 'Please ensure at least one item has a valid name.');
       return;
     }
 
@@ -419,7 +467,7 @@ export default function ScanReceiptModal({
                             <Text style={styles.currencyPrefix}>$</Text>
                             <TextInput
                               style={styles.itemPriceInput}
-                              value={item.price > 0 ? item.price.toString() : ''}
+                              value={rawPrices[idx] !== undefined ? rawPrices[idx] : (item.price > 0 ? item.price.toString() : '')}
                               onChangeText={(text) => handleUpdateItemPrice(idx, text)}
                               keyboardType="decimal-pad"
                               placeholder="0.00"
