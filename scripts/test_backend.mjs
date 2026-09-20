@@ -180,6 +180,88 @@ async function main() {
     return `Successfully tested full friendship lifecycle (pending -> accepted -> deleted)`;
   });
 
+  let createdFeastId = null;
+
+  // Test 11: List Feasts for User
+  await runTest(`GET /users/${activeUserId}/feasts (Fetch User Hosted / Attending Feasts)`, async () => {
+    const feasts = await request(`/users/${activeUserId}/feasts`);
+    if (!Array.isArray(feasts)) throw new Error(`Expected array of feasts`);
+    const feastNames = feasts.map(f => `"${f.name}" (ID ${f.id})`).join(', ');
+    return `Retrieved ${feasts.length} feasts: [${feastNames || 'None currently'}]`;
+  });
+
+  // Test 12: Create Feast Party
+  await runTest(`POST /feasts (Create Feast Party with Attendees & Recipe)`, async () => {
+    const attendeeUsers = allUsers.filter(u => u.id !== activeUserId).slice(0, 2);
+    const attendeeIds = attendeeUsers.map(u => u.id);
+
+    const feastPayload = {
+      name: `Backend Test Cook-Off (${Date.now().toString().slice(-4)})`,
+      host_id: activeUserId,
+      recipe: {
+        rank: 1,
+        rank_reason: 'Top match pooling expiring spinach and avocado',
+        name: 'Crispy Veggie Hash & Herb Skillet',
+        cuisine: 'Fusion',
+        uses: [
+          { name: 'Spinach', expiring: true, from_users: ['Sam'] },
+          { name: 'Eggs', expiring: false, from_users: ['Nadia'] },
+        ],
+        missing: [],
+        uses_expiring: ['Spinach'],
+        prep_minutes: 10,
+        cook_minutes: 20,
+        total_minutes: 30,
+        contributors: ['Sam', 'Nadia'],
+        why: 'Zero waste collaborative breakfast skillet',
+        liked_by: [],
+        is_liked: false,
+      },
+      attendee_ids: attendeeIds,
+      scheduled_for: '2026-09-26T18:30:00Z',
+    };
+
+    const created = await request('/feasts', {
+      method: 'POST',
+      body: JSON.stringify(feastPayload),
+    });
+
+    if (!created.id || !Array.isArray(created.attendees)) {
+      throw new Error(`Invalid feast creation response`);
+    }
+
+    createdFeastId = created.id;
+    return `Created Feast ID ${created.id}: "${created.name}" with ${created.attendees.length} attendees (${created.invitations_sent} sent, ${created.invitations_pending} pending)`;
+  });
+
+  // Test 13: Respond / RSVP to Feast
+  await runTest(`POST /feasts/{id}/respond/{user_id} (RSVP Response: Accepted)`, async () => {
+    if (!createdFeastId) throw new Error('No test feast ID available');
+    const feast = await request(`/feasts/${createdFeastId}`);
+    const nonHostAttendee = feast.attendees.find(a => !a.is_host);
+    if (!nonHostAttendee) throw new Error('No non-host attendee in test feast');
+
+    const updatedFeast = await request(`/feasts/${createdFeastId}/respond/${nonHostAttendee.user_id}`, {
+      method: 'POST',
+      body: JSON.stringify({ response: 'accepted' }),
+    });
+
+    const updatedAttendee = updatedFeast.attendees?.find(a => a.user_id === nonHostAttendee.user_id);
+    if (updatedAttendee?.response !== 'accepted') {
+      throw new Error(`Expected attendee response 'accepted' but got '${updatedAttendee?.response}'`);
+    }
+
+    return `Attendee ${updatedAttendee.name} (User ID ${updatedAttendee.user_id}) RSVP set to: ${updatedAttendee.response}`;
+  });
+
+  // Test 14: User Notifications (Delivery Audit)
+  await runTest(`GET /users/${activeUserId}/notifications (Feast Invitation Delivery Audit)`, async () => {
+    const notifications = await request(`/users/${activeUserId}/notifications`);
+    if (!Array.isArray(notifications)) throw new Error('Expected array of notifications');
+    const feastNotifs = notifications.filter(n => n.kind === 'feast_invitation' || n.feast_id);
+    return `Found ${notifications.length} total notifications (${feastNotifs.length} feast related invitations/updates)`;
+  });
+
   console.log(`\n======================================================`);
   console.log(`📊 TEST SUMMARY: ${passedTests} / ${totalTests} TESTS PASSED`);
   if (passedTests === totalTests) {

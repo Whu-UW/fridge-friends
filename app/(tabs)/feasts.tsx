@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Alert,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,6 +26,8 @@ export default function FeastsScreen() {
     reopenFeastVoting,
     toggleFeastFriendRsvp,
     cancelFeastInvite,
+    backendConnected,
+    backendSyncAttempted,
   } = useApp();
 
   const getVoterName = (voterId: string) => {
@@ -94,6 +97,18 @@ export default function FeastsScreen() {
   // Safe bottom padding preventing Android nav bar overlap
   const safeBottomPadding = Math.max(insets.bottom, 16) + 100;
 
+  if (!backendSyncAttempted) {
+    return (
+      <View style={styles.initialLoadingContainer}>
+        <ActivityIndicator size="large" color="#2563EB" />
+        <Text style={styles.initialLoadingTitle}>Connecting to Live Database...</Text>
+        <Text style={styles.initialLoadingSub}>
+          Loading dinner parties and candidate recipes...
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <ScrollView
       style={styles.container}
@@ -112,18 +127,34 @@ export default function FeastsScreen() {
 
         <Pressable
           style={styles.hostFeastBtn}
-          onPress={() => router.push('/(tabs)')}
+          onPress={() =>
+            router.push({
+              pathname: '/(tabs)',
+              params: { openFeast: 'true' },
+            })
+          }
         >
           <Text style={styles.hostFeastBtnText}>+ Host Feast</Text>
         </Pressable>
       </View>
 
-      {/* Local storage note */}
-      <View style={styles.hardcodedNoticeCard}>
-        <Text style={styles.hardcodedNoticeText}>
-          ℹ️ [LOCAL / ON-DEVICE] Feasts and voting polls are managed in app state (backend database does not yet have a feasts table). Expiring food is pooled from live pantry accounts.
-        </Text>
-      </View>
+      {/* Database vs Hardcoded Notice */}
+      {backendConnected ? (
+        <View style={styles.dbStatusBanner}>
+          <Text style={styles.dbStatusBannerText}>
+            🟢 Live Database Feasts: Connected to /feasts backend database ({feasts.length} active parties)
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.hardcodedWarningBanner}>
+          <Text style={styles.hardcodedWarningTitle}>
+            ⚠️ [HARDCODED DATA] Database Unreachable
+          </Text>
+          <Text style={styles.hardcodedWarningSub}>
+            Note: Showing hardcoded backup feast data because the database backend is unreachable.
+          </Text>
+        </View>
+      )}
 
       {feasts.length === 0 ? (
         <View style={styles.emptyFeastsBox}>
@@ -182,6 +213,24 @@ export default function FeastsScreen() {
                   </Text>
                 </View>
               </View>
+
+              {/* Scheduled Date & Delivery Badges */}
+              {(feast.scheduledFor || feast.invitationsSent !== undefined) ? (
+                <View style={styles.feastMetaRow}>
+                  {feast.scheduledFor ? (
+                    <Text style={styles.feastMetaDate}>
+                      📅 Scheduled: {new Date(feast.scheduledFor).toLocaleDateString([], { month: 'short', day: 'numeric' })} at {new Date(feast.scheduledFor).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                    </Text>
+                  ) : <View />}
+                  {feast.invitationsSent !== undefined ? (
+                    <View style={styles.deliveryBadge}>
+                      <Text style={styles.deliveryBadgeText}>
+                        ✉️ {feast.invitationsSent} sent {feast.invitationsPending ? `(${feast.invitationsPending} pend)` : ''}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
 
               {/* VOTING MODE: Candidate Recipes with Click-to-View and Voting */}
               {isVotingMode ? (
@@ -419,6 +468,7 @@ export default function FeastsScreen() {
                 {/* Invited friends */}
                 {feast.invitedFriends.map((friend) => {
                   const isAccepted = friend.status === 'accepted';
+                  const isDeclined = friend.status === 'declined';
                   return (
                     <View key={friend.id} style={styles.attendeeRow}>
                       <View style={styles.attendeeInfo}>
@@ -448,6 +498,8 @@ export default function FeastsScreen() {
                             styles.statusPill,
                             isAccepted
                               ? styles.statusPillAccepted
+                              : isDeclined
+                              ? styles.statusPillDeclined
                               : styles.statusPillPending,
                           ]}
                         >
@@ -456,10 +508,12 @@ export default function FeastsScreen() {
                               styles.statusPillText,
                               isAccepted
                                 ? styles.statusPillTextAccepted
+                                : isDeclined
+                                ? styles.statusPillTextDeclined
                                 : styles.statusPillTextPending,
                             ]}
                           >
-                            {isAccepted ? '✓ Accepted' : '⏳ Pending'}
+                            {isAccepted ? '✓ Accepted' : isDeclined ? '✕ Declined' : '⏳ Pending'}
                           </Text>
                         </View>
 
@@ -471,7 +525,7 @@ export default function FeastsScreen() {
                           }
                         >
                           <Text style={styles.simulateRsvpBtnText}>
-                            {isAccepted ? 'Set Pending' : 'Simulate Accept'}
+                            {isAccepted ? 'Decline' : 'Accept'}
                           </Text>
                         </Pressable>
                       </View>
@@ -634,6 +688,33 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#15803D',
+  },
+  feastMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    marginBottom: 8,
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  feastMetaDate: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  deliveryBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  deliveryBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#1D4ED8',
   },
   pollSection: {
     backgroundColor: '#F8FAFC',
@@ -979,6 +1060,9 @@ const styles = StyleSheet.create({
   statusPillPending: {
     backgroundColor: '#FEF3C7',
   },
+  statusPillDeclined: {
+    backgroundColor: '#FEE2E2',
+  },
   statusPillText: {
     fontSize: 11,
     fontWeight: '700',
@@ -988,6 +1072,9 @@ const styles = StyleSheet.create({
   },
   statusPillTextPending: {
     color: '#92400E',
+  },
+  statusPillTextDeclined: {
+    color: '#991B1B',
   },
   simulateRsvpBtn: {
     backgroundColor: '#FFFFFF',
@@ -1018,5 +1105,55 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontSize: 12,
     fontWeight: '600',
+  },
+  initialLoadingContainer: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  initialLoadingTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginTop: 14,
+  },
+  initialLoadingSub: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  dbStatusBanner: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  dbStatusBannerText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#065F46',
+  },
+  hardcodedWarningBanner: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  hardcodedWarningTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#991B1B',
+  },
+  hardcodedWarningSub: {
+    fontSize: 12,
+    color: '#B91C1C',
+    marginTop: 2,
   },
 });

@@ -3,8 +3,14 @@
  * Target Base URL: https://fridge-friends-be.fastapicloud.dev
  */
 
-import { FridgeItemRow, ProfileRow } from './supabase/types';
-import { FriendEntry } from '../context/AppContext';
+import {
+  FridgeItemRow,
+  ProfileRow,
+  RecipeComposite,
+  RecipeIngredientRow,
+  RecipeTaskRow,
+} from './supabase/types';
+import type { FriendEntry, FeastInvite, FeastFriendStatus } from '../context/AppContext';
 
 export const BACKEND_BASE_URL =
   process.env.EXPO_PUBLIC_BACKEND_URL || 'https://fridge-friends-be.fastapicloud.dev';
@@ -67,6 +73,72 @@ export interface BackendFriend {
   friend: BackendUser;
 }
 
+export interface BackendAttendeeRead {
+  user_id: number;
+  name: string;
+  email: string;
+  response: 'invited' | 'accepted' | 'declined';
+  responded_at: string | null;
+  is_host: boolean;
+}
+
+export interface BackendRecipeIngredient {
+  name: string;
+  expiring?: boolean;
+  from_users?: string[];
+}
+
+export interface BackendRecipeRead {
+  rank: number;
+  rank_reason: string;
+  name: string;
+  cuisine?: string | null;
+  uses?: BackendRecipeIngredient[];
+  missing?: string[];
+  uses_expiring?: string[];
+  prep_minutes?: number | null;
+  cook_minutes?: number | null;
+  total_minutes?: number | null;
+  contributors?: string[];
+  why?: string | null;
+  liked_by?: string[];
+  is_liked: boolean;
+}
+
+export interface BackendFeastRead {
+  id: number;
+  name: string;
+  host_id: number;
+  host_name: string;
+  scheduled_for: string | null;
+  recipe: BackendRecipeRead;
+  attendees: BackendAttendeeRead[];
+  invitations_sent: number;
+  invitations_pending: number;
+  created_at: string;
+}
+
+export interface BackendFeastCreate {
+  name: string;
+  host_id: number;
+  recipe: BackendRecipeRead;
+  attendee_ids: number[];
+  scheduled_for?: string | null;
+}
+
+export interface BackendNotificationRead {
+  id: number;
+  user_id: number;
+  kind: string;
+  title: string;
+  body: string;
+  feast_id?: number | null;
+  delivery_status: 'pending' | 'sent' | 'failed';
+  delivery_error?: string | null;
+  read_at?: string | null;
+  created_at: string;
+}
+
 export interface BackendHealthResponse {
   status: string;
 }
@@ -78,6 +150,7 @@ export interface ConnectionDiagnosticResult {
   usersCount: number;
   groceriesCount: number;
   friendsCount: number;
+  feastsCount: number;
   error?: string;
 }
 
@@ -94,6 +167,17 @@ const USER_AVATARS: Record<number, string> = {
   18: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100', // Obi
 };
 
+export function getUserAvatar(userId: number, name: string): string {
+  if (USER_AVATARS[userId]) return USER_AVATARS[userId];
+  const lower = name.toLowerCase();
+  if (lower.includes('sam')) return 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100';
+  if (lower.includes('nadia')) return 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100';
+  if (lower.includes('theo')) return 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100';
+  if (lower.includes('mei')) return 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100';
+  if (lower.includes('obi')) return 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100';
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=10B981&color=fff`;
+}
+
 export function toFrontendProfile(user: BackendUser): ProfileRow {
   const username = user.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_');
   return {
@@ -101,9 +185,7 @@ export function toFrontendProfile(user: BackendUser): ProfileRow {
     email: user.email,
     username: username || `user_${user.id}`,
     display_name: user.name,
-    avatar_url:
-      USER_AVATARS[user.id] ||
-      `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=10B981&color=fff`,
+    avatar_url: getUserAvatar(user.id, user.name),
     created_at: user.created_at,
   };
 }
@@ -116,9 +198,7 @@ export function toFrontendFriend(backendFriend: BackendFriend): FriendEntry {
     email: friendUser.email,
     username: username || `user_${friendUser.id}`,
     display_name: friendUser.name,
-    avatar_url:
-      USER_AVATARS[friendUser.id] ||
-      `https://ui-avatars.com/api/?name=${encodeURIComponent(friendUser.name)}&background=3B82F6&color=fff`,
+    avatar_url: getUserAvatar(friendUser.id, friendUser.name),
     created_at: friendUser.created_at,
     status: backendFriend.status === 'accepted' ? 'accepted' : 'pending',
   };
@@ -207,6 +287,194 @@ export function toBackendGroceryItemCreate(
     category: category || 'pantry',
     expires_on,
     purchased_on,
+  };
+}
+
+export function toFrontendRecipeFromBackend(
+  backendRecipe: BackendRecipeRead,
+  fallbackId?: string
+): RecipeComposite {
+  const recipeId =
+    fallbackId ||
+    `backend-rec-${backendRecipe.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+  const totalMinutes =
+    backendRecipe.total_minutes ||
+    (backendRecipe.prep_minutes || 0) + (backendRecipe.cook_minutes || 25);
+  const cookTimeStr = `${totalMinutes || 25} mins`;
+
+  const uses = backendRecipe.uses || [];
+  const ingredients: RecipeIngredientRow[] = uses.map((u, idx) => ({
+    id: `${recipeId}-ing-${idx}`,
+    recipe_id: recipeId,
+    item_name: u.name,
+    quantity: '1 serving',
+    owner_id: u.from_users && u.from_users[0] ? u.from_users[0] : 'shared',
+    owner_name: u.from_users && u.from_users[0] ? u.from_users[0] : 'Party Host',
+    is_expiring_item:
+      Boolean(u.expiring) || (backendRecipe.uses_expiring || []).includes(u.name),
+  }));
+
+  const cookingTasks: RecipeTaskRow[] = [
+    {
+      id: `${recipeId}-task-1`,
+      recipe_id: recipeId,
+      step_number: 1,
+      instruction: `Prep ingredients: ${
+        uses.map((u) => u.name).slice(0, 4).join(', ') || 'wash and chop all produce'
+      }.`,
+      assigned_to_id: 'host',
+      assigned_to_name: 'Host & Helpers',
+    },
+    {
+      id: `${recipeId}-task-2`,
+      recipe_id: recipeId,
+      step_number: 2,
+      instruction:
+        backendRecipe.rank_reason ||
+        `Assemble and cook ${backendRecipe.name} following chef recommendations.`,
+      assigned_to_id: 'host',
+      assigned_to_name: 'Cooking Crew',
+    },
+    {
+      id: `${recipeId}-task-3`,
+      recipe_id: recipeId,
+      step_number: 3,
+      instruction: 'Garnish, plate, and serve fresh while hot!',
+      assigned_to_id: 'host',
+      assigned_to_name: 'Everyone',
+    },
+  ];
+
+  const foodRescuedGrams = Math.max(
+    300,
+    (backendRecipe.uses_expiring?.length || 1) * 220
+  );
+  const dollarsSaved = parseFloat(
+    ((backendRecipe.uses_expiring?.length || 1) * 4.5).toFixed(2)
+  );
+
+  return {
+    id: recipeId,
+    title: backendRecipe.name,
+    cookTime: cookTimeStr,
+    isCollaborative: true,
+    circleId: null,
+    circleName: 'Dinner Party Feast',
+    focusExpiringItems: backendRecipe.uses_expiring || [],
+    ingredients,
+    cookingTasks,
+    projectedImpact: {
+      foodRescuedGrams,
+      dollarsSaved,
+    },
+    rsvps: backendRecipe.liked_by || [],
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export function toFrontendFeast(backendFeast: BackendFeastRead): FeastInvite {
+  const feastId = String(backendFeast.id);
+  const primaryRecipe = toFrontendRecipeFromBackend(
+    backendFeast.recipe,
+    `feast-rec-${backendFeast.id}`
+  );
+
+  const invitedFriends: FeastFriendStatus[] = backendFeast.attendees
+    .filter((a) => !a.is_host)
+    .map((attendee) => {
+      const status: 'accepted' | 'pending' | 'declined' =
+        attendee.response === 'accepted'
+          ? 'accepted'
+          : attendee.response === 'declined'
+          ? 'declined'
+          : 'pending';
+
+      return {
+        id: String(attendee.user_id),
+        name: attendee.name,
+        username:
+          attendee.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_') ||
+          `user_${attendee.user_id}`,
+        avatarUrl: getUserAvatar(attendee.user_id, attendee.name),
+        status,
+      };
+    });
+
+  const candidateRecipes = [
+    {
+      recipe: primaryRecipe,
+      votes: backendFeast.attendees
+        .filter((a) => a.response === 'accepted')
+        .map((a) => String(a.user_id)),
+    },
+  ];
+
+  return {
+    id: feastId,
+    partyName: backendFeast.name,
+    hostId: String(backendFeast.host_id),
+    hostName: backendFeast.host_name,
+    candidateRecipes,
+    selectedRecipeId: primaryRecipe.id,
+    recipeId: primaryRecipe.id,
+    recipeTitle: primaryRecipe.title,
+    cookTime: primaryRecipe.cookTime,
+    foodRescuedGrams: primaryRecipe.projectedImpact.foodRescuedGrams,
+    dollarsSaved: primaryRecipe.projectedImpact.dollarsSaved,
+    invitedFriends,
+    status: 'confirmed',
+    createdAt: backendFeast.created_at,
+    scheduledFor: backendFeast.scheduled_for || undefined,
+    invitationsSent: backendFeast.invitations_sent,
+    invitationsPending: backendFeast.invitations_pending,
+  };
+}
+
+export function toBackendFeastCreate(
+  recipe: RecipeComposite,
+  partyName: string,
+  hostId: number,
+  attendeeIds: number[],
+  scheduledForIso?: string
+): BackendFeastCreate {
+  const recipeTitle = recipe?.title || `${partyName} Chef's Special`;
+  const uses = (recipe?.ingredients || []).map((ing) => ({
+    name: ing.item_name,
+    expiring: Boolean(ing.is_expiring_item),
+    from_users: ing.owner_name ? [ing.owner_name] : ['Party Host'],
+  }));
+
+  const uniqueContributors = Array.from(
+    new Set(
+      (recipe?.ingredients || [])
+        .map((i) => i.owner_name)
+        .filter(Boolean)
+    )
+  );
+
+  const backendRecipe: BackendRecipeRead = {
+    rank: 1,
+    rank_reason: `Curated dinner party recipe for ${partyName}`,
+    name: recipeTitle,
+    cuisine: recipe?.circleName ? 'Circle Special' : 'Fusion',
+    uses: uses.length > 0 ? uses : [{ name: 'Fresh Ingredients', expiring: true, from_users: ['Host'] }],
+    missing: [],
+    uses_expiring: recipe?.focusExpiringItems || [],
+    prep_minutes: 10,
+    cook_minutes: parseInt(recipe?.cookTime || '20', 10) || 20,
+    total_minutes: parseInt(recipe?.cookTime || '30', 10) || 30,
+    contributors: uniqueContributors.length > 0 ? uniqueContributors : [recipe?.circleName || 'Host'],
+    why: 'Zero-waste collaborative meal pooling expiring ingredients',
+    liked_by: recipe?.rsvps || [],
+    is_liked: false,
+  };
+
+  return {
+    name: partyName,
+    host_id: hostId,
+    recipe: backendRecipe,
+    attendee_ids: attendeeIds,
+    scheduled_for: scheduledForIso || null,
   };
 }
 
@@ -425,6 +693,64 @@ export const backendApi = {
   },
 
   /**
+   * List feasts for a user (as host or attendee)
+   */
+  async getFeasts(userId: number): Promise<BackendFeastRead[]> {
+    return request<BackendFeastRead[]>(`/users/${userId}/feasts`);
+  },
+
+  /**
+   * Get single feast by ID
+   */
+  async getFeast(feastId: number): Promise<BackendFeastRead> {
+    return request<BackendFeastRead>(`/feasts/${feastId}`);
+  },
+
+  /**
+   * Create a new feast party
+   */
+  async createFeast(feast: BackendFeastCreate): Promise<BackendFeastRead> {
+    return request<BackendFeastRead>('/feasts', {
+      method: 'POST',
+      body: JSON.stringify(feast),
+    });
+  },
+
+  /**
+   * Respond / RSVP to feast party
+   */
+  async respondToFeast(
+    feastId: number,
+    userId: number,
+    response: 'accepted' | 'declined'
+  ): Promise<BackendFeastRead> {
+    return request<BackendFeastRead>(`/feasts/${feastId}/respond/${userId}`, {
+      method: 'POST',
+      body: JSON.stringify({ response }),
+    });
+  },
+
+  /**
+   * Resend feast invitations
+   */
+  async resendFeastInvitations(feastId: number): Promise<BackendFeastRead> {
+    return request<BackendFeastRead>(`/feasts/${feastId}/resend-invitations`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Get notifications for a user
+   */
+  async getNotifications(
+    userId: number,
+    options?: { unreadOnly?: boolean }
+  ): Promise<BackendNotificationRead[]> {
+    const query = options?.unreadOnly ? '?unread_only=true' : '';
+    return request<BackendNotificationRead[]>(`/users/${userId}/notifications${query}`);
+  },
+
+  /**
    * Run full diagnostics audit to test connectivity
    */
   async runDiagnostics(userId = 14): Promise<ConnectionDiagnosticResult> {
@@ -434,6 +760,13 @@ export const backendApi = {
       const users = await this.getUsers(10);
       const groceries = await this.getGroceryItems(userId);
       const friends = await this.getFriends(userId);
+      let feastsCount = 0;
+      try {
+        const userFeasts = await this.getFeasts(userId);
+        feastsCount = userFeasts.length;
+      } catch (fErr) {
+        console.warn('Diagnostics feasts fetch note:', fErr);
+      }
 
       return {
         connected: health.status === 'ok',
@@ -442,6 +775,7 @@ export const backendApi = {
         usersCount: users.length,
         groceriesCount: groceries.length,
         friendsCount: friends.length,
+        feastsCount,
       };
     } catch (err: any) {
       return {
@@ -451,6 +785,7 @@ export const backendApi = {
         usersCount: 0,
         groceriesCount: 0,
         friendsCount: 0,
+        feastsCount: 0,
         error: err.message || 'Unknown network error',
       };
     }

@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Alert,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,6 +24,7 @@ export default function SocialScreen() {
     removeFriend,
     getFriendFridgeItems,
     backendConnected,
+    backendSyncAttempted,
   } = useApp();
 
   // Add Friend Input State
@@ -68,6 +70,18 @@ export default function SocialScreen() {
 
   // Safe bottom padding preventing Android navigation bar overlap
   const safeBottomPadding = Math.max(insets.bottom, 16) + 100;
+
+  if (!backendSyncAttempted) {
+    return (
+      <View style={styles.initialLoadingContainer}>
+        <ActivityIndicator size="large" color="#2563EB" />
+        <Text style={styles.initialLoadingTitle}>Connecting to Live Database...</Text>
+        <Text style={styles.initialLoadingSub}>
+          Loading friends and shared fridges from server...
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView
@@ -594,5 +608,24 @@ const styles = StyleSheet.create({
     color: '#1D4ED8',
     fontSize: 12,
     fontWeight: '700',
+  },
+  initialLoadingContainer: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  initialLoadingTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginTop: 14,
+  },
+  initialLoadingSub: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 4,
+    textAlign: 'center',
   },
 });

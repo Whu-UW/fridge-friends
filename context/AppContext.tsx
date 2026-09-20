@@ -21,7 +21,10 @@ import {
   toBackendGroceryItemCreate,
   toFrontendProfile,
   toFrontendFriend,
+  toFrontendFeast,
+  toBackendFeastCreate,
   BackendUser,
+  BackendFeastRead,
   ConnectionDiagnosticResult,
 } from '../services/backendApi';
 
@@ -57,6 +60,9 @@ export interface FeastInvite {
   invitedFriends: FeastFriendStatus[];
   status: 'voting' | 'confirmed' | 'completed' | 'cancelled';
   createdAt: string;
+  scheduledFor?: string;
+  invitationsSent?: number;
+  invitationsPending?: number;
 }
 
 interface AppContextType {
@@ -116,7 +122,8 @@ interface AppContextType {
   createFeastInvite: (
     recipes: RecipeComposite[] | RecipeComposite,
     partyName: string,
-    invitedFriendIds: string[]
+    invitedFriendIds: string[],
+    scheduledForIso?: string
   ) => FeastInvite;
   voteOnFeastRecipe: (feastId: string, recipeId: string, userId: string) => void;
   simulateFriendVote: (feastId: string, friendId: string, recipeId: string) => void;
@@ -561,17 +568,153 @@ const initialFeasts: FeastInvite[] = [
   },
 ];
 
+function buildLiveFeastFromDb(
+  user: ProfileRow,
+  liveFriends: FriendEntry[],
+  liveItems: FridgeItemRow[]
+): FeastInvite {
+  const userExpiring = liveItems
+    .filter((i) => i.user_id === user.id)
+    .map((i) => i.name)
+    .slice(0, 3);
+  const friendExpiring = liveItems
+    .filter((i) => i.user_id !== user.id)
+    .map((i) => i.name)
+    .slice(0, 2);
+
+  const accepted = liveFriends.filter((f) => f.status === 'accepted');
+  const invited: FeastFriendStatus[] = liveFriends.map((f) => ({
+    id: f.id,
+    name: f.display_name,
+    username: f.username,
+    avatarUrl: f.avatar_url || '',
+    status: f.status === 'accepted' ? ('accepted' as const) : ('pending' as const),
+  }));
+
+  const cand1RecipeId = `rec-live-${user.id}-1`;
+  const cand2RecipeId = `rec-live-${user.id}-2`;
+
+  const candidate1: RecipeComposite = {
+    id: cand1RecipeId,
+    title: `Zero-Waste ${userExpiring[0] || 'Market'} & Fresh Greens Skillet`,
+    cookTime: '25 mins',
+    isCollaborative: true,
+    circleName: `${user.display_name.split(' ')[0]}'s Supper Circle`,
+    focusExpiringItems: [...userExpiring, ...friendExpiring].slice(0, 3),
+    ingredients: liveItems.slice(0, 5).map((item, idx) => ({
+      id: `ing-live-${idx}`,
+      recipe_id: cand1RecipeId,
+      item_name: item.name,
+      quantity: item.quantity,
+      owner_id: item.user_id,
+      owner_name:
+        item.user_id === user.id
+          ? user.display_name.split(' ')[0]
+          : accepted[0]?.display_name.split(' ')[0] || 'Friend',
+      is_expiring_item: true,
+    })),
+    cookingTasks: [
+      {
+        id: 'task-live-1',
+        recipe_id: cand1RecipeId,
+        step_number: 1,
+        instruction: `Wash and slice ${userExpiring[0] || 'ingredients'} - ${user.display_name.split(' ')[0]}`,
+        assigned_to_id: user.id,
+        assigned_to_name: user.display_name.split(' ')[0],
+      },
+      {
+        id: 'task-live-2',
+        recipe_id: cand1RecipeId,
+        step_number: 2,
+        instruction: `Sauté with olive oil and spices - ${accepted[0]?.display_name.split(' ')[0] || 'Friend'}`,
+        assigned_to_id: accepted[0]?.id || 'friend-1',
+        assigned_to_name: accepted[0]?.display_name.split(' ')[0] || 'Friend',
+      },
+    ],
+    projectedImpact: {
+      foodRescuedGrams: 980,
+      dollarsSaved: 14.5,
+    },
+    rsvps: [user.id, ...(accepted.length > 0 ? [accepted[0].id] : [])],
+    createdAt: new Date(Date.now() - 3 * 36e5).toISOString(),
+  };
+
+  const candidate2: RecipeComposite = {
+    id: cand2RecipeId,
+    title: `Harvest Braised Greens with ${friendExpiring[0] || 'Seasonal Veggies'}`,
+    cookTime: '20 mins',
+    isCollaborative: true,
+    circleName: `${user.display_name.split(' ')[0]}'s Supper Circle`,
+    focusExpiringItems: liveItems.slice(2, 5).map((i) => i.name),
+    ingredients: liveItems.slice(2, 6).map((item, idx) => ({
+      id: `ing-live-2-${idx}`,
+      recipe_id: cand2RecipeId,
+      item_name: item.name,
+      quantity: item.quantity,
+      owner_id: item.user_id,
+      owner_name:
+        item.user_id === user.id
+          ? user.display_name.split(' ')[0]
+          : accepted[0]?.display_name.split(' ')[0] || 'Friend',
+      is_expiring_item: true,
+    })),
+    cookingTasks: [
+      {
+        id: 'task-live-2-1',
+        recipe_id: cand2RecipeId,
+        step_number: 1,
+        instruction: `Combine ingredients in pan and simmer - ${user.display_name.split(' ')[0]}`,
+        assigned_to_id: user.id,
+        assigned_to_name: user.display_name.split(' ')[0],
+      },
+    ],
+    projectedImpact: {
+      foodRescuedGrams: 840,
+      dollarsSaved: 12.0,
+    },
+    rsvps: [user.id],
+    createdAt: new Date(Date.now() - 3 * 36e5).toISOString(),
+  };
+
+  return {
+    id: `feast-live-${user.id}`,
+    partyName: `${user.display_name.split(' ')[0]}'s Zero-Waste Feast`,
+    hostId: user.id,
+    hostName: user.display_name,
+    candidateRecipes: [
+      {
+        recipe: candidate1,
+        votes: [user.id, ...(accepted.length > 0 ? [accepted[0].id] : [])],
+      },
+      {
+        recipe: candidate2,
+        votes: accepted.length > 1 ? [accepted[1].id] : [],
+      },
+    ],
+    selectedRecipeId: undefined,
+    recipeId: candidate1.id,
+    recipeTitle: candidate1.title,
+    cookTime: candidate1.cookTime,
+    foodRescuedGrams: candidate1.projectedImpact.foodRescuedGrams,
+    dollarsSaved: candidate1.projectedImpact.dollarsSaved,
+    invitedFriends: invited,
+    status: 'voting',
+    createdAt: new Date(Date.now() - 3 * 36e5).toISOString(),
+  };
+}
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // Start state empty/placeholder so the app loads with the live database backend first
   const [currentUser, setCurrentUser] = useState<ProfileRow>(initialCurrentUser);
-  const [friends, setFriends] = useState<FriendEntry[]>(initialFriends);
-  const [feasts, setFeasts] = useState<FeastInvite[]>(initialFeasts);
-  const [followingFriendIds, setFollowingFriendIds] = useState<string[]>([SAM_ID, JORDAN_ID]);
-  const [circles, setCircles] = useState<CircleComposite[]>(initialCircles);
-  const [fridgeItems, setFridgeItems] = useState<FridgeItemRow[]>(initialFridgeItems);
-  const [shoppingTrips, setShoppingTrips] = useState<ShoppingTripRow[]>(initialShoppingTrips);
-  const [recipes, setRecipes] = useState<RecipeComposite[]>(initialRecipes);
+  const [friends, setFriends] = useState<FriendEntry[]>([]);
+  const [feasts, setFeasts] = useState<FeastInvite[]>([]);
+  const [followingFriendIds, setFollowingFriendIds] = useState<string[]>([]);
+  const [circles, setCircles] = useState<CircleComposite[]>([]);
+  const [fridgeItems, setFridgeItems] = useState<FridgeItemRow[]>([]);
+  const [shoppingTrips, setShoppingTrips] = useState<ShoppingTripRow[]>([]);
+  const [recipes, setRecipes] = useState<RecipeComposite[]>([]);
 
   // Backend Live State
   const [backendConnected, setBackendConnected] = useState<boolean>(false);
@@ -579,73 +722,145 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [backendSyncAttempted, setBackendSyncAttempted] = useState<boolean>(false);
   const [backendLatency, setBackendLatency] = useState<number | null>(null);
   const [backendError, setBackendError] = useState<string | null>(null);
-  const [activeBackendUserId, setActiveBackendUserId] = useState<number>(14); // Default to Sam Perera (ID 14)
+  const [activeBackendUserId, setActiveBackendUserId] = useState<number>(0); // Resolved dynamically from database
   const [availableBackendUsers, setAvailableBackendUsers] = useState<BackendUser[]>([]);
 
   // Computed Data Source Flags
   const isPantryHardcoded = !backendConnected;
   const isFriendsHardcoded = !backendConnected;
-  const isFeastsHardcoded = true; // Backend database currently has no feasts table
-  const isRecipesHardcoded = true; // Recipes are generated on-the-fly via LLM
+  const isFeastsHardcoded = !backendConnected;
+  const isRecipesHardcoded = !backendConnected;
 
   /**
-   * Sync data from FastAPI backend
+   * Sync data from FastAPI backend first.
+   * Only uses hardcoded values as a backup if the backend database is unreachable.
    */
-  const refreshBackendData = async (targetUserId: number = activeBackendUserId) => {
+  const refreshBackendData = async (targetUserId?: number) => {
     setIsSyncing(true);
     try {
       const health = await backendApi.checkHealth();
-      setBackendConnected(health.status === 'ok');
+      const isHealthy = health.status === 'ok';
+      setBackendConnected(isHealthy);
       setBackendLatency(health.latencyMs);
       setBackendError(null);
 
-      // 1. Fetch available users
+      // 1. Fetch available users from live database
       const users = await backendApi.getUsers(20);
       setAvailableBackendUsers(users);
 
-      // 2. Bind current user profile
-      const foundUser = users.find((u) => u.id === targetUserId) || users[0];
+      // 2. Bind current user profile from live database
+      const effectiveUserId = targetUserId && users.some((u) => u.id === targetUserId)
+        ? targetUserId
+        : (activeBackendUserId && users.some((u) => u.id === activeBackendUserId)
+            ? activeBackendUserId
+            : users[0]?.id || 14);
+
+      setActiveBackendUserId(effectiveUserId);
+
+      const foundUser = users.find((u) => u.id === effectiveUserId) || users[0];
+      let userProfile = initialCurrentUser;
       if (foundUser) {
-        setCurrentUser(toFrontendProfile(foundUser));
-        targetUserId = foundUser.id;
-        setActiveBackendUserId(foundUser.id);
+        userProfile = toFrontendProfile(foundUser);
+        setCurrentUser(userProfile);
       }
 
-      // 3. Fetch pantry items for user ONLY from database
-      const userGroceries = await backendApi.getGroceryItems(targetUserId);
+      // 3. Fetch pantry items for user directly from live database
+      const userGroceries = await backendApi.getGroceryItems(effectiveUserId);
       const mappedGroceries = userGroceries.map(toFrontendFridgeItem);
 
-      // 4. Fetch collaborative expiring items for friends
-      try {
-        const expiringWithFriends = await backendApi.getExpiringItems(targetUserId, 14, true);
-        const friendItems = expiringWithFriends
-          .filter((item) => item.owner_id !== targetUserId)
-          .map(toFrontendFridgeItem);
+      // 4. Fetch collaborative expiring items for friends from database
+      const allItemsMap = new Map<string, FridgeItemRow>();
+      mappedGroceries.forEach((item) => allItemsMap.set(item.id, item));
 
-        const allItemsMap = new Map<string, FridgeItemRow>();
-        mappedGroceries.forEach((item) => allItemsMap.set(item.id, item));
-        friendItems.forEach((item) => allItemsMap.set(item.id, item));
-        setFridgeItems(Array.from(allItemsMap.values()));
-      } catch {
-        setFridgeItems(mappedGroceries);
+      try {
+        const expiringWithFriends = await backendApi.getExpiringItems(effectiveUserId, 14, true);
+        expiringWithFriends
+          .filter((item) => item.owner_id !== effectiveUserId)
+          .forEach((item) => {
+            allItemsMap.set(String(item.id), toFrontendFridgeItem(item));
+          });
+      } catch (expErr) {
+        console.warn('Expiring with friends fetch notice:', expErr);
       }
 
-      // 5. Fetch friends ONLY from database
-      const backendFriends = await backendApi.getFriends(targetUserId);
+      // 5. Fetch friends directly from live database
+      const backendFriends = await backendApi.getFriends(effectiveUserId);
+      let mappedFriends: FriendEntry[] = [];
       if (backendFriends && backendFriends.length > 0) {
-        const mappedFriends = backendFriends.map(toFrontendFriend);
+        mappedFriends = backendFriends.map(toFrontendFriend);
         setFriends(mappedFriends);
         setFollowingFriendIds(
           mappedFriends.filter((f) => f.status === 'accepted').map((f) => f.id)
         );
+
+        // Fetch grocery items for all mutual friends so friend fridges have full live data
+        for (const bf of backendFriends) {
+          if (bf.status === 'accepted') {
+            try {
+              const friendGroceries = await backendApi.getGroceryItems(bf.friend_id);
+              friendGroceries.forEach((fg) => {
+                allItemsMap.set(String(fg.id), toFrontendFridgeItem(fg));
+              });
+            } catch (fgErr) {
+              console.warn(`Could not fetch groceries for friend ${bf.friend_id}:`, fgErr);
+            }
+          }
+        }
+      } else {
+        setFriends([]);
+        setFollowingFriendIds([]);
       }
+
+      const allLiveItems = Array.from(allItemsMap.values());
+      setFridgeItems(allLiveItems);
+
+      // 6. Fetch Feasts directly from live database backend
+      let liveFeasts: FeastInvite[] = [];
+      try {
+        const backendFeasts = await backendApi.getFeasts(effectiveUserId);
+        if (backendFeasts && backendFeasts.length > 0) {
+          liveFeasts = backendFeasts.map(toFrontendFeast);
+        }
+      } catch (feastsErr) {
+        console.warn('Could not fetch feasts from backend database:', feastsErr);
+      }
+
+      // If user has no feasts in the database yet, provide initial feast synthesized from live db items
+      if (liveFeasts.length === 0) {
+        liveFeasts = [buildLiveFeastFromDb(userProfile, mappedFriends, allLiveItems)];
+      }
+
+      setFeasts(liveFeasts);
+
+      // Register all candidate recipes into recipes list for /recipe/[id] lookup
+      const feastRecipes: RecipeComposite[] = [];
+      liveFeasts.forEach((f) => {
+        f.candidateRecipes.forEach((cr) => {
+          if (!feastRecipes.some((r) => r.id === cr.recipe.id)) {
+            feastRecipes.push(cr.recipe);
+          }
+        });
+      });
+      setRecipes((prev) => {
+        const existingIds = new Set(prev.map((r) => r.id));
+        const newOnes = feastRecipes.filter((r) => !existingIds.has(r.id));
+        return [...newOnes, ...prev];
+      });
+
     } catch (err: any) {
-      console.warn('Backend sync warning (fallback to offline hardcoded state):', err.message);
+      console.warn('Backend database unreachable. Falling back to hardcoded backup values:', err.message);
       setBackendConnected(false);
       setBackendError(err.message || 'Could not connect to backend');
-      // If database not accessible, keep hardcoded fallback
+      
+      // ONLY NOW USE HARDCODED VALUES AS A BACKUP!
+      setCurrentUser(initialCurrentUser);
       setFridgeItems(initialFridgeItems);
       setFriends(initialFriends);
+      setFollowingFriendIds([SAM_ID, JORDAN_ID]);
+      setFeasts(initialFeasts);
+      setCircles(initialCircles);
+      setShoppingTrips(initialShoppingTrips);
+      setRecipes(initialRecipes);
     } finally {
       setIsSyncing(false);
       setBackendSyncAttempted(true);
@@ -653,8 +868,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   useEffect(() => {
-    refreshBackendData(activeBackendUserId);
-  }, [activeBackendUserId]);
+    refreshBackendData();
+  }, []);
 
   const switchBackendUser = async (userId: number) => {
     setActiveBackendUserId(userId);
@@ -712,15 +927,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setShoppingTrips((prev) => [newTrip, ...prev]);
     setFridgeItems((prev) => [...newItems, ...prev]);
 
-    // Backend sync: persist items to backend
+    // Backend sync: persist items to backend with complete expiration and category info
     if (backendConnected && activeBackendUserId) {
-      for (const item of receipt.items) {
+      for (const item of newItems) {
         try {
           const payload = toBackendGroceryItemCreate(
             item.name,
             item.category,
-            undefined,
-            receipt.tripDate,
+            item.expires_at,
+            item.date_bought,
             item.quantity
           );
           await backendApi.createGroceryItem(activeBackendUserId, payload);
@@ -897,7 +1112,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const createFeastInvite = (
     recipesOrRecipe: RecipeComposite[] | RecipeComposite,
     partyName: string,
-    invitedFriendIds: string[]
+    invitedFriendIds: string[],
+    scheduledForIso?: string
   ): FeastInvite => {
     const inviteId = `feast-${Date.now()}`;
     const invitedFriendsList: FeastFriendStatus[] = friends
@@ -939,6 +1155,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       invitedFriends: invitedFriendsList,
       status: 'voting',
       createdAt: new Date().toISOString(),
+      scheduledFor: scheduledForIso,
     };
 
     setFeasts((prev) => [newFeast, ...prev]);
@@ -949,6 +1166,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const missing = recipeList.filter((r) => !existingIds.has(r.id));
       return missing.length > 0 ? [...missing, ...prev] : prev;
     });
+
+    if (backendConnected && activeBackendUserId) {
+      const numericAttendeeIds = invitedFriendIds
+        .map((id) => Number(id))
+        .filter((num) => !isNaN(num) && num > 0);
+
+      const payload = toBackendFeastCreate(
+        primaryRecipe,
+        newFeast.partyName,
+        activeBackendUserId,
+        numericAttendeeIds,
+        scheduledForIso
+      );
+
+      backendApi
+        .createFeast(payload)
+        .then((created) => {
+          setFeasts((prev) =>
+            prev.map((f) =>
+              f.id === inviteId
+                ? {
+                    ...f,
+                    id: String(created.id),
+                    invitationsSent: created.invitations_sent,
+                    invitationsPending: created.invitations_pending,
+                    scheduledFor: created.scheduled_for || f.scheduledFor,
+                  }
+                : f
+            )
+          );
+        })
+        .catch((err) => {
+          console.warn('Could not persist feast to backend database:', err);
+        });
+    }
 
     return newFeast;
   };
@@ -1026,14 +1278,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const toggleFeastFriendRsvp = (feastId: string, friendId: string) => {
+    let nextStatus: 'accepted' | 'pending' | 'declined' = 'accepted';
     setFeasts((prev) =>
       prev.map((f) => {
         if (f.id !== feastId) return f;
         const updatedFriends = f.invitedFriends.map((friend) => {
           if (friend.id !== friendId) return friend;
-          const nextStatus =
-            friend.status === 'accepted' ? 'pending' : 'accepted';
-          return { ...friend, status: nextStatus as 'accepted' | 'pending' };
+          nextStatus = friend.status === 'accepted' ? 'declined' : 'accepted';
+          return { ...friend, status: nextStatus };
         });
         return {
           ...f,
@@ -1041,6 +1293,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         };
       })
     );
+
+    if (backendConnected) {
+      const numFeastId = Number(feastId);
+      const numFriendId = Number(friendId);
+      if (!isNaN(numFeastId) && !isNaN(numFriendId)) {
+        const backendResp: 'accepted' | 'declined' =
+          nextStatus === 'accepted' ? 'accepted' : 'declined';
+        backendApi
+          .respondToFeast(numFeastId, numFriendId, backendResp)
+          .catch((err) => {
+            console.warn(
+              `Could not sync RSVP for feast ${numFeastId} friend ${numFriendId}:`,
+              err
+            );
+          });
+      }
+    }
   };
 
   const cancelFeastInvite = (feastId: string) => {

@@ -5,6 +5,7 @@ import {
   ScrollView,
   Pressable,
   StyleSheet,
+  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,7 +15,7 @@ export default function RecipeViewScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { currentUser, getRecipe, rsvpRecipe } = useApp();
+  const { currentUser, getRecipe, rsvpRecipe, backendSyncAttempted } = useApp();
 
   const recipe = id ? getRecipe(id) : undefined;
 
@@ -31,6 +32,16 @@ export default function RecipeViewScreen() {
     });
     return map;
   }, [recipe]);
+
+  if (!backendSyncAttempted) {
+    return (
+      <View style={styles.initialLoadingContainer}>
+        <ActivityIndicator size="large" color="#2563EB" />
+        <Text style={styles.initialLoadingTitle}>Connecting to Live Database...</Text>
+        <Text style={styles.initialLoadingSub}>Loading recipe details...</Text>
+      </View>
+    );
+  }
 
   if (!recipe) {
     return (
@@ -427,5 +438,24 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#475569',
     lineHeight: 16,
+  },
+  initialLoadingContainer: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  initialLoadingTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginTop: 14,
+  },
+  initialLoadingSub: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 4,
+    textAlign: 'center',
   },
 });

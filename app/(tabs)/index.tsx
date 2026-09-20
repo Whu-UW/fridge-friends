@@ -1,6 +1,6 @@
 import * as ImagePicker from "expo-image-picker";
-import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useRouter, useLocalSearchParams } from "expo-router";
+import { useState, useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
@@ -54,6 +54,7 @@ export default function MyFridgeScreen() {
     generateTopDinnerPartyRecipes,
     createFeastInvite,
     backendConnected,
+    backendSyncAttempted,
     isPantryHardcoded,
   } = useApp();
 
@@ -75,6 +76,16 @@ export default function MyFridgeScreen() {
   const [partyRecipes, setPartyRecipes] = useState<RecipeComposite[]>([]);
   const [isPartyRecipesModalVisible, setIsPartyRecipesModalVisible] =
     useState(false);
+
+  // Feast Scheduling State
+  const [scheduledOption, setScheduledOption] = useState<
+    "tonight" | "tomorrow" | "weekend" | "custom" | "tbd"
+  >("tonight");
+  const [customScheduledDate, setCustomScheduledDate] = useState<string>(
+    new Date(Date.now() + 864e5).toISOString().slice(0, 10),
+  );
+  const [customScheduledTime, setCustomScheduledTime] =
+    useState<string>("19:00");
 
   // FAB Menu Modal State
   const [isFabMenuVisible, setIsFabMenuVisible] = useState(false);
@@ -156,6 +167,73 @@ export default function MyFridgeScreen() {
   };
 
   // 2. "Feast Mode" Flow: Select mutual friends & generate top 5 collaborative recipes
+  // Deep-link listener for opening Feast Mode from Feasts tab
+  const params = useLocalSearchParams<{ openFeast?: string }>();
+  useEffect(() => {
+    if (params?.openFeast === "true") {
+      handleOpenPartyFriendsModal();
+    }
+  }, [params?.openFeast]);
+
+  const computeScheduledIso = (
+    option: "tonight" | "tomorrow" | "weekend" | "custom" | "tbd",
+    customDate?: string,
+    customTime?: string,
+  ): string | undefined => {
+    if (option === "tbd") return undefined;
+
+    const now = new Date();
+    if (option === "tonight") {
+      const d = new Date(now);
+      d.setHours(19, 0, 0, 0);
+      if (d.getTime() <= now.getTime()) {
+        d.setTime(now.getTime() + 2 * 36e5);
+      }
+      return d.toISOString();
+    }
+
+    if (option === "tomorrow") {
+      const d = new Date(now);
+      d.setDate(d.getDate() + 1);
+      d.setHours(19, 0, 0, 0);
+      return d.toISOString();
+    }
+
+    if (option === "weekend") {
+      const d = new Date(now);
+      const dayOfWeek = d.getDay();
+      const daysUntilSaturday = (6 - dayOfWeek + 7) % 7 || 7;
+      d.setDate(d.getDate() + daysUntilSaturday);
+      d.setHours(18, 30, 0, 0);
+      return d.toISOString();
+    }
+
+    if (option === "custom" && customDate) {
+      const timeStr =
+        customTime && customTime.includes(":") ? customTime : "19:00";
+      const dateStr = customDate.slice(0, 10);
+      const combined = new Date(`${dateStr}T${timeStr}:00`);
+      if (!isNaN(combined.getTime())) {
+        return combined.toISOString();
+      }
+      return new Date().toISOString();
+    }
+
+    return undefined;
+  };
+
+  const formatScheduledPreview = (
+    option: "tonight" | "tomorrow" | "weekend" | "custom" | "tbd",
+    customDate?: string,
+    customTime?: string,
+  ): string => {
+    if (option === "tbd") return "Decide with friends later";
+    const iso = computeScheduledIso(option, customDate, customTime);
+    if (!iso) return "Decide with friends later";
+    const d = new Date(iso);
+    return `${d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })} at ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+  };
+
   const handleOpenPartyFriendsModal = () => {
     if (userItems.length === 0) {
       Alert.alert(
@@ -210,12 +288,27 @@ export default function MyFridgeScreen() {
     const friendNames =
       invitedFriendsList.map((f) => f.display_name).join(", ") || "friends";
 
-    createFeastInvite(partyRecipes, partyTitle, selectedFriendIds);
+    const scheduledIso = computeScheduledIso(
+      scheduledOption,
+      customScheduledDate,
+      customScheduledTime,
+    );
+
+    createFeastInvite(
+      partyRecipes,
+      partyTitle,
+      selectedFriendIds,
+      scheduledIso,
+    );
     setIsPartyRecipesModalVisible(false);
+
+    const scheduleMsg = scheduledIso
+      ? `\nScheduled for: ${new Date(scheduledIso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`
+      : "";
 
     Alert.alert(
       "Feast Invites Sent for Group Voting! 🎉",
-      `Invitations with all ${partyRecipes.length} candidate recipes were sent to ${friendNames}.\n\nEveryone can now vote on what to cook in the Feasts tab!`,
+      `Invitations with all ${partyRecipes.length} candidate recipes were sent to ${friendNames}.${scheduleMsg}\n\nEveryone can now vote on what to cook in the Feasts tab!`,
       [
         {
           text: "Open Feasts Tab",
@@ -233,12 +326,22 @@ export default function MyFridgeScreen() {
     const friendNames =
       invitedFriendsList.map((f) => f.display_name).join(", ") || "friends";
 
-    createFeastInvite(recipe, partyTitle, selectedFriendIds);
+    const scheduledIso = computeScheduledIso(
+      scheduledOption,
+      customScheduledDate,
+      customScheduledTime,
+    );
+
+    createFeastInvite(recipe, partyTitle, selectedFriendIds, scheduledIso);
     setIsPartyRecipesModalVisible(false);
+
+    const scheduleMsg = scheduledIso
+      ? `\nScheduled for: ${new Date(scheduledIso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`
+      : "";
 
     Alert.alert(
       "Feast Invites Sent! 🎉",
-      `Invitations for "${recipe.title}" were sent to ${friendNames}.\n\nYou can track RSVPs and recipe details in the Feasts tab!`,
+      `Invitations for "${recipe.title}" were sent to ${friendNames}.${scheduleMsg}\n\nYou can track RSVPs and recipe details in the Feasts tab!`,
       [
         {
           text: "View in Feasts Tab",
@@ -564,6 +667,18 @@ export default function MyFridgeScreen() {
     );
   };
 
+  if (!backendSyncAttempted) {
+    return (
+      <View style={styles.initialLoadingContainer}>
+        <ActivityIndicator size="large" color="#059669" />
+        <Text style={styles.initialLoadingTitle}>Connecting to Live Database...</Text>
+        <Text style={styles.initialLoadingSub}>
+          Loading {currentUser.display_name}&apos;s pantry directly from server...
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       {/* Live Database vs Hardcoded Fallback Indicator */}
@@ -798,16 +913,24 @@ export default function MyFridgeScreen() {
             </View>
 
             <ScrollView
-              style={{ marginTop: 10, maxHeight: 380 }}
+              style={{ marginTop: 10, maxHeight: 460 }}
               contentContainerStyle={{ paddingBottom: 10 }}
               keyboardShouldPersistTaps="handled"
             >
-              {/* Hardcoded / Local Notice */}
-              <View style={styles.hardcodedNoticeCard}>
-                <Text style={styles.hardcodedNoticeText}>
-                  ℹ️ [HARDCODED / LOCAL] Feasts and invites are managed locally on your device (backend database does not yet have a feasts table). Expiring ingredients are pooled from live database accounts.
-                </Text>
-              </View>
+              {/* Database Notice */}
+              {backendConnected ? (
+                <View style={styles.liveDbNoticeCard}>
+                  <Text style={styles.liveDbNoticeText}>
+                    🟢 [LIVE DATABASE] Feasts, attendee invitations, and scheduled times are persisted directly to the backend database.
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.hardcodedNoticeCard}>
+                  <Text style={styles.hardcodedNoticeText}>
+                    ⚠️ [HARDCODED BACKUP] Database unreachable. Invitations will be stored locally.
+                  </Text>
+                </View>
+              )}
 
               {/* Party Title */}
               <Text style={styles.inputLabel}>Feast Name:</Text>
@@ -818,6 +941,85 @@ export default function MyFridgeScreen() {
                 placeholder="e.g. Friday Night Zero-Waste Feast"
                 placeholderTextColor="#9CA3AF"
               />
+
+              {/* Schedule Date & Time */}
+              <View style={styles.scheduleSection}>
+                <Text style={styles.inputLabel}>📅 Schedule Feast Time:</Text>
+                <Text style={styles.scheduleHint}>
+                  Set when your dinner party happens so guests can plan ahead:
+                </Text>
+
+                <View style={styles.schedulePresetsRow}>
+                  {[
+                    { id: "tonight", label: "Tonight (7 PM)" },
+                    { id: "tomorrow", label: "Tomorrow (7 PM)" },
+                    { id: "weekend", label: "This Weekend (6:30 PM)" },
+                    { id: "custom", label: "Custom Time ⏱️" },
+                    { id: "tbd", label: "TBD" },
+                  ].map((preset) => {
+                    const isSelected = scheduledOption === preset.id;
+                    return (
+                      <Pressable
+                        key={preset.id}
+                        style={[
+                          styles.scheduleChip,
+                          isSelected && styles.scheduleChipSelected,
+                        ]}
+                        onPress={() => setScheduledOption(preset.id as any)}
+                      >
+                        <Text
+                          style={[
+                            styles.scheduleChipText,
+                            isSelected && styles.scheduleChipTextSelected,
+                          ]}
+                        >
+                          {preset.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {/* Custom Date & Time Inputs when 'custom' is selected */}
+                {scheduledOption === "custom" && (
+                  <View style={styles.customScheduleContainer}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.subInputLabel}>Date (YYYY-MM-DD):</Text>
+                      <TextInput
+                        style={styles.manualInput}
+                        value={customScheduledDate}
+                        onChangeText={setCustomScheduledDate}
+                        placeholder="2026-09-26"
+                        placeholderTextColor="#9CA3AF"
+                      />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={styles.subInputLabel}>Time (24h or HH:MM):</Text>
+                      <TextInput
+                        style={styles.manualInput}
+                        value={customScheduledTime}
+                        onChangeText={setCustomScheduledTime}
+                        placeholder="19:00"
+                        placeholderTextColor="#9CA3AF"
+                      />
+                    </View>
+                  </View>
+                )}
+
+                {/* Live Preview of Scheduled Time */}
+                {scheduledOption !== "tbd" && (
+                  <View style={styles.schedulePreviewBox}>
+                    <Text style={styles.schedulePreviewText}>
+                      📅 Scheduled for:{" "}
+                      {formatScheduledPreview(
+                        scheduledOption,
+                        customScheduledDate,
+                        customScheduledTime,
+                      )}
+                    </Text>
+                  </View>
+                )}
+              </View>
 
               {/* Friends list header */}
               <View
@@ -978,12 +1180,20 @@ export default function MyFridgeScreen() {
               </Pressable>
             </View>
 
-            {/* Hardcoded / Local Notice */}
-            <View style={styles.hardcodedNoticeCard}>
-              <Text style={styles.hardcodedNoticeText}>
-                ℹ️ [LOCAL / AI-GENERATED] Collaborative recipes are generated dynamically to rescue food across fridges. Backend database does not yet have a feasts table.
-              </Text>
-            </View>
+            {/* Database Notice */}
+            {backendConnected ? (
+              <View style={styles.liveDbNoticeCard}>
+                <Text style={styles.liveDbNoticeText}>
+                  🟢 [LIVE DATABASE] Invites and voting poll will be created directly on the backend database.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.hardcodedNoticeCard}>
+                <Text style={styles.hardcodedNoticeText}>
+                  ⚠️ [HARDCODED BACKUP] Database unreachable. Invites will be stored locally.
+                </Text>
+              </View>
+            )}
 
             {/* Voting Banner & Primary Action: Send all recipes for group voting */}
             <View style={styles.votingBannerBox}>
@@ -993,6 +1203,20 @@ export default function MyFridgeScreen() {
               <Text style={styles.votingBannerSub}>
                 You don't need to force a choice now! Send invites with all {partyRecipes.length} candidate recipes attached. Everyone can vote on what to cook in the Feasts tab!
               </Text>
+
+              {scheduledOption !== "tbd" && (
+                <View style={styles.recipeModalScheduleBadge}>
+                  <Text style={styles.recipeModalScheduleText}>
+                    📅 Scheduled for:{" "}
+                    {formatScheduledPreview(
+                      scheduledOption,
+                      customScheduledDate,
+                      customScheduledTime,
+                    )}
+                  </Text>
+                </View>
+              )}
+
               <Pressable
                 style={styles.sendAllCandidatesBtn}
                 onPress={handleSendFeastInvitesWithAllRecipes}
@@ -1561,6 +1785,25 @@ export default function MyFridgeScreen() {
 }
 
 const styles = StyleSheet.create({
+  initialLoadingContainer: {
+    flex: 1,
+    backgroundColor: "#F9FAFB",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  initialLoadingTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+    marginTop: 14,
+  },
+  initialLoadingSub: {
+    fontSize: 13,
+    color: "#6B7280",
+    marginTop: 4,
+    textAlign: "center",
+  },
   container: {
     flex: 1,
     backgroundColor: "#F9FAFB",
@@ -2511,5 +2754,93 @@ const styles = StyleSheet.create({
     color: "#374151",
     fontSize: 12,
     fontWeight: "600",
+  },
+  liveDbNoticeCard: {
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  liveDbNoticeText: {
+    fontSize: 12,
+    color: "#166534",
+    lineHeight: 17,
+    fontWeight: "600",
+  },
+  scheduleSection: {
+    marginTop: 14,
+    marginBottom: 6,
+  },
+  scheduleHint: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginBottom: 8,
+  },
+  schedulePresetsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 10,
+  },
+  scheduleChip: {
+    backgroundColor: "#F3F4F6",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  scheduleChipSelected: {
+    backgroundColor: "#2563EB",
+    borderColor: "#1D4ED8",
+  },
+  scheduleChipText: {
+    fontSize: 12,
+    color: "#4B5563",
+    fontWeight: "600",
+  },
+  scheduleChipTextSelected: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  customScheduleContainer: {
+    flexDirection: "row",
+    marginBottom: 10,
+  },
+  subInputLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: 4,
+  },
+  schedulePreviewBox: {
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 6,
+  },
+  schedulePreviewText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1E40AF",
+  },
+  recipeModalScheduleBadge: {
+    backgroundColor: "#EFF6FF",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginTop: 6,
+    marginBottom: 10,
+    alignSelf: "flex-start",
+  },
+  recipeModalScheduleText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1D4ED8",
   },
 });

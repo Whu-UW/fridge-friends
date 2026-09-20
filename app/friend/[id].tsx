@@ -5,6 +5,7 @@ import {
   FlatList,
   Pressable,
   StyleSheet,
+  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,11 +16,30 @@ export default function FriendFridgeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { friends, followingFriendIds, toggleFollowFriend, getFriendFridgeItems } = useApp();
+  const {
+    friends,
+    followingFriendIds,
+    toggleFollowFriend,
+    getFriendFridgeItems,
+    backendConnected,
+    backendSyncAttempted,
+  } = useApp();
 
   const friend = friends.find((f) => f.id === id);
   const items = id ? getFriendFridgeItems(id) : [];
   const isFollowing = id ? followingFriendIds.includes(id) : false;
+
+  if (!backendSyncAttempted) {
+    return (
+      <View style={styles.initialLoadingContainer}>
+        <ActivityIndicator size="large" color="#2563EB" />
+        <Text style={styles.initialLoadingTitle}>Connecting to Live Database...</Text>
+        <Text style={styles.initialLoadingSub}>
+          Loading friend&apos;s shared fridge from server...
+        </Text>
+      </View>
+    );
+  }
 
   if (!friend) {
     return (
@@ -108,6 +128,24 @@ export default function FriendFridgeScreen() {
           ingredients and cook zero-waste meals together.
         </Text>
       </View>
+
+      {/* Live Database vs Hardcoded Fallback Indicator */}
+      {backendConnected ? (
+        <View style={styles.dbStatusBanner}>
+          <Text style={styles.dbStatusBannerText}>
+            🟢 Live Database: {friend.display_name}&apos;s Pantry ({items.length} items from server)
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.hardcodedWarningBanner}>
+          <Text style={styles.hardcodedWarningTitle}>
+            ⚠️ [HARDCODED DATA] Database Unreachable
+          </Text>
+          <Text style={styles.hardcodedWarningSub}>
+            Note: Showing hardcoded fallback items for {friend.display_name}&apos;s fridge.
+          </Text>
+        </View>
+      )}
 
       {/* Inventory */}
       <FlatList
@@ -302,5 +340,55 @@ const styles = StyleSheet.create({
   backBtnText: {
     color: '#FFFFFF',
     fontWeight: '600',
+  },
+  initialLoadingContainer: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  initialLoadingTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginTop: 14,
+  },
+  initialLoadingSub: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  dbStatusBanner: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  dbStatusBannerText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#065F46',
+  },
+  hardcodedWarningBanner: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  hardcodedWarningTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#991B1B',
+  },
+  hardcodedWarningSub: {
+    fontSize: 12,
+    color: '#B91C1C',
+    marginTop: 2,
   },
 });
