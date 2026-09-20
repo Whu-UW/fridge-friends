@@ -202,11 +202,14 @@ export default function ShelfScreen() {
         selectedItemIds.length > 0
           ? selectedItemIds
           : categorizedItems
-              .filter((i) => i.urgencyStatus === "now" || i.urgencyStatus === "soon")
+              .filter(
+                (i) => i.urgencyStatus === "now" || i.urgencyStatus === "soon",
+              )
               .map((i) => i.id);
       router.push({
         pathname: "/(tabs)/feasts",
-        params: targetIds.length > 0 ? { itemIds: targetIds.join(",") } : undefined,
+        params:
+          targetIds.length > 0 ? { itemIds: targetIds.join(",") } : undefined,
       });
     }
   };
@@ -215,7 +218,7 @@ export default function ShelfScreen() {
     let targetIds = selectedItemIds;
     if (targetIds.length === 0) {
       const atRisk = categorizedItems.filter(
-        (i) => i.urgencyStatus === "now" || i.urgencyStatus === "soon"
+        (i) => i.urgencyStatus === "now" || i.urgencyStatus === "soon",
       );
       targetIds =
         atRisk.length > 0
@@ -223,7 +226,10 @@ export default function ShelfScreen() {
           : categorizedItems.slice(0, 3).map((i) => i.id);
     }
     if (targetIds.length === 0) {
-      Alert.alert("No Groceries", "Stock your fridge first to rescue ingredients!");
+      Alert.alert(
+        "No Groceries",
+        "Stock your fridge first to rescue ingredients!",
+      );
       return;
     }
     router.push({
@@ -409,11 +415,11 @@ export default function ShelfScreen() {
                 {isViewingFriend
                   ? `${viewedFriend?.display_name}'s Fridge`
                   : isSelectMode
-                  ? "Pick ingredients"
-                  : "Your Fridge"}
+                    ? "Pick ingredients"
+                    : "Your Fridge"}
               </Text>
-              {!isViewingFriend && (
-                isSelectMode ? (
+              {!isViewingFriend &&
+                (isSelectMode ? (
                   <View style={styles.pickSubtitleRow}>
                     <Text style={styles.pickSubtitleCount}>
                       {selectedItemIds.length} selected
@@ -433,8 +439,7 @@ export default function ShelfScreen() {
                       ? `${rescueBadgeCount} need rescuing · ${urgentRedCount} urgent`
                       : `${categorizedItems.length} items total`}
                   </Text>
-                )
-              )}
+                ))}
             </View>
 
             {!isViewingFriend && (
@@ -452,7 +457,7 @@ export default function ShelfScreen() {
                     isSelectMode && styles.donePillText,
                   ]}
                 >
-                  {isSelectMode ? "Done" : "Select"}
+                  {isSelectMode ? "Cancel" : "Select"}
                 </Text>
               </Pressable>
             )}
