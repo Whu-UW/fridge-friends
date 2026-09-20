@@ -61,11 +61,15 @@ export interface FeastInvite {
   foodRescuedGrams: number;
   dollarsSaved: number;
   invitedFriends: FeastFriendStatus[];
-  status: 'voting' | 'confirmed' | 'completed' | 'cancelled';
+  status: 'voting' | 'confirmed' | 'cooking' | 'completed' | 'cancelled' | 'pending';
   createdAt: string;
   scheduledFor?: string;
   invitationsSent?: number;
   invitationsPending?: number;
+  userRsvpStatus?: 'host' | 'pending' | 'accepted' | 'declined';
+  bringBreakdown?: Array<{ who: string; items: string; avatarUrl?: string }>;
+  cookingTasks?: Array<{ step_number?: number; instruction: string; assignedTo?: string }>;
+  outcome?: 'rescued' | 'failed';
 }
 
 interface AppContextType {
@@ -77,6 +81,7 @@ interface AppContextType {
   fridgeItems: FridgeItemRow[];
   shoppingTrips: ShoppingTripRow[];
   recipes: RecipeComposite[];
+  savedRecipes: RecipeComposite[];
   // Backend State & Data Source Tracking
   backendConnected: boolean;
   isSyncing: boolean;
@@ -94,7 +99,12 @@ interface AppContextType {
   testBackendDiagnostics: () => Promise<ConnectionDiagnosticResult>;
   // Auth State & Actions (FastAPI /auth endpoints)
   isLoggedIn: boolean;
-  signUp: (username: string, password: string, buddy: BackendBuddy) => Promise<BackendUser>;
+  signUp: (
+    username: string,
+    password: string,
+    buddy: BackendBuddy,
+    displayName?: string
+  ) => Promise<BackendUser>;
   signIn: (username: string, password: string) => Promise<BackendUser>;
   logout: () => Promise<void>;
   changeUsername: (newUsername: string) => Promise<void>;
@@ -109,6 +119,7 @@ interface AppContextType {
     customExpiresAtIso?: string
   ) => Promise<void>;
   removeFridgeItem: (id: string) => void;
+  tossFridgeItem: (id: string) => void;
   toggleFollowFriend: (friendId: string) => void;
   addFriend: (username: string, displayName?: string) => void;
   acceptFriendRequest: (friendId: string) => void;
@@ -124,7 +135,7 @@ interface AppContextType {
   getCircleExpiringItems: (circleId: string, hoursThreshold?: number) => FridgeItemRow[];
   generateSoloWasteRecipe: () => Promise<string>;
   generateCircleMealRecipe: (circleId: string) => Promise<string>;
-  generateTopSoloRecipes: () => Promise<RecipeComposite[]>;
+  generateTopSoloRecipes: (itemsOverride?: FridgeItemRow[]) => Promise<RecipeComposite[]>;
   generateTopDinnerPartyRecipes: (
     partyName: string,
     invitedFriendIds: string[]
@@ -135,6 +146,15 @@ interface AppContextType {
     invitedFriendIds: string[],
     scheduledForIso?: string
   ) => FeastInvite;
+  addCustomFeast: (feast: FeastInvite) => void;
+  startFeastCooking: (feastId: string) => void;
+  completeFeast: (feastId: string, outcome: 'rescued' | 'failed') => void;
+  respondToFeastInvite: (feastId: string, response: 'accepted' | 'declined') => void;
+  nudgeFeastFriend: (feastId: string, friendId: string) => void;
+  recordRescuedMeal: (arg1?: any, arg2?: any, arg3?: any) => void;
+  recordWastedMeal: (arg1?: any, arg2?: any, arg3?: any) => void;
+  saveRecipe: (recipe: RecipeComposite) => void;
+  removeSavedRecipe: (recipeId: string) => void;
   voteOnFeastRecipe: (feastId: string, recipeId: string, userId: string) => void;
   simulateFriendVote: (feastId: string, friendId: string, recipeId: string) => void;
   confirmFeastRecipe: (feastId: string, recipeId: string) => void;
@@ -725,6 +745,36 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [fridgeItems, setFridgeItems] = useState<FridgeItemRow[]>([]);
   const [shoppingTrips, setShoppingTrips] = useState<ShoppingTripRow[]>([]);
   const [recipes, setRecipes] = useState<RecipeComposite[]>([]);
+  const [savedRecipes, setSavedRecipes] = useState<RecipeComposite[]>([]);
+
+  useEffect(() => {
+    AsyncStorage.getItem('@saved_recipes')
+      .then((data) => {
+        if (data) {
+          try {
+            setSavedRecipes(JSON.parse(data));
+          } catch {}
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const saveRecipe = (recipe: RecipeComposite) => {
+    setSavedRecipes((prev) => {
+      if (prev.some((r) => r.id === recipe.id)) return prev;
+      const next = [recipe, ...prev];
+      AsyncStorage.setItem('@saved_recipes', JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  };
+
+  const removeSavedRecipe = (recipeId: string) => {
+    setSavedRecipes((prev) => {
+      const next = prev.filter((r) => r.id !== recipeId);
+      AsyncStorage.setItem('@saved_recipes', JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  };
 
   // Backend Live State
   const [backendConnected, setBackendConnected] = useState<boolean>(false);
@@ -900,8 +950,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     await refreshBackendData(user.id);
   };
 
-  const signUp = async (username: string, password: string, buddy: BackendBuddy) => {
+  const signUp = async (
+    username: string,
+    password: string,
+    buddy: BackendBuddy,
+    displayName?: string
+  ) => {
     const user = await backendApi.signup(username.trim(), password, buddy);
+    if (displayName && displayName.trim()) {
+      try {
+        const updated = await backendApi.updateUser(user.id, {
+          name: displayName.trim(),
+        });
+        user.name = updated.name;
+      } catch (e) {
+        console.warn('Could not set display name on signup:', e);
+      }
+    }
     await startSession(user);
     return user;
   };
@@ -916,7 +981,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const updated = await backendApi.updateUser(activeBackendUserId, {
       username: newUsername.trim(),
     });
-    setCurrentUser((prev) => ({ ...prev, username: updated.username }));
+    setCurrentUser((prev) => ({
+      ...prev,
+      username: updated.username || prev.username,
+    }));
   };
 
   const logout = async () => {
@@ -1107,6 +1175,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         console.warn('Could not delete item from backend:', err);
       });
     }
+  };
+
+  const tossFridgeItem = (id: string) => {
+    removeFridgeItem(id);
   };
 
   const toggleFollowFriend = (friendId: string) => {
@@ -1406,6 +1478,44 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setFeasts((prev) => prev.filter((f) => f.id !== feastId));
   };
 
+  const addCustomFeast = (feast: FeastInvite) => {
+    setFeasts((prev) => [feast, ...prev]);
+  };
+
+  const startFeastCooking = (feastId: string) => {
+    setFeasts((prev) =>
+      prev.map((f) => (f.id === feastId ? { ...f, status: 'cooking' as const } : f))
+    );
+  };
+
+  const completeFeast = (feastId: string, outcome: 'rescued' | 'failed') => {
+    setFeasts((prev) =>
+      prev.map((f) =>
+        f.id === feastId ? { ...f, status: 'completed' as const, outcome } : f
+      )
+    );
+  };
+
+  const respondToFeastInvite = (feastId: string, response: 'accepted' | 'declined') => {
+    setFeasts((prev) =>
+      prev.map((f) =>
+        f.id === feastId ? { ...f, userRsvpStatus: response } : f
+      )
+    );
+  };
+
+  const nudgeFeastFriend = (feastId: string, friendId: string) => {
+    console.log(`Nudge sent for feast ${feastId} to friend ${friendId}`);
+  };
+
+  const recordRescuedMeal = (recipe: RecipeComposite) => {
+    console.log('Rescued meal recorded:', recipe.title);
+  };
+
+  const recordWastedMeal = (recipe: RecipeComposite) => {
+    console.log('Wasted meal recorded:', recipe.title);
+  };
+
   const updateProfile = (updates: {
     display_name?: string;
     avatar_url?: string;
@@ -1535,10 +1645,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return recipe.id;
   };
 
-  const generateTopSoloRecipes = async (): Promise<RecipeComposite[]> => {
+  const generateTopSoloRecipes = async (
+    itemsOverride?: FridgeItemRow[]
+  ): Promise<RecipeComposite[]> => {
     const expiring = getUserExpiringItems(72);
     const itemsToUse =
-      expiring.length > 0
+      itemsOverride && itemsOverride.length > 0
+        ? itemsOverride
+        : expiring.length > 0
         ? expiring
         : fridgeItems.filter((i) => i.user_id === currentUser.id).slice(0, 4);
 
@@ -1613,6 +1727,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       fridgeItems,
       shoppingTrips,
       recipes,
+      savedRecipes,
       feasts,
       backendConnected,
       isSyncing,
@@ -1637,6 +1752,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       addShoppingTripFromReceipt,
       addManualFridgeItem,
       removeFridgeItem,
+      tossFridgeItem,
       toggleFollowFriend,
       addFriend,
       acceptFriendRequest,
@@ -1651,6 +1767,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       generateTopSoloRecipes,
       generateTopDinnerPartyRecipes,
       createFeastInvite,
+      addCustomFeast,
+      startFeastCooking,
+      completeFeast,
+      respondToFeastInvite,
+      nudgeFeastFriend,
+      recordRescuedMeal,
+      recordWastedMeal,
+      saveRecipe,
+      removeSavedRecipe,
       voteOnFeastRecipe,
       simulateFriendVote,
       confirmFeastRecipe,
@@ -1670,6 +1795,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       fridgeItems,
       shoppingTrips,
       recipes,
+      savedRecipes,
       backendConnected,
       isSyncing,
       backendSyncAttempted,

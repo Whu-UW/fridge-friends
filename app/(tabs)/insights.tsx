@@ -18,7 +18,7 @@ import StickerButton from '../../components/ui/StickerButton';
 import FoodCharacter from '../../components/FoodCharacter';
 import ChangeBuddyModal from '../../components/ChangeBuddyModal';
 import AccountEditModal from '../../components/AccountEditModal';
-import { backendApi, BackendStats } from '../../services/backendApi';
+import { backendApi, BackendStats, BackendBuddy } from '../../services/backendApi';
 import { CharacterKey, STARTER_BUDDIES, buddyKeyFromBackend, buddyToBackend } from '../../services/foodCharacterLookup';
 
 const DIET_OPTIONS = ['Vegetarian', 'Vegan', 'Pescatarian', 'Gluten-free', 'Dairy-free'];
@@ -488,7 +488,7 @@ export default function ProfileYouScreen() {
           const found = STARTER_BUDDIES.find((b) => b.key === key);
           setBuddyName(found ? found.desc : name);
           AsyncStorage.setItem(`user_buddy_${currentUser.id}`, key);
-          const backendBuddy = buddyToBackend(key);
+          const backendBuddy = buddyToBackend(key) as BackendBuddy;
           if (backendBuddy && userId) {
             backendApi.updateUser(userId, { buddy: backendBuddy }).catch((err) => {
               Alert.alert('Could not save buddy', err?.message || 'Please try again.');

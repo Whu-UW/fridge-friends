@@ -16,6 +16,7 @@ import { useApp, FriendEntry } from '../../context/AppContext';
 import { Colors, Fonts } from '../../constants/Theme';
 import StickerCard from '../../components/ui/StickerCard';
 import StickerButton from '../../components/ui/StickerButton';
+import { getDaysLeft } from '../../services/foodCharacterLookup';
 
 export default function SocialScreen() {
   const router = useRouter();
@@ -142,6 +143,14 @@ export default function SocialScreen() {
               <Text style={styles.inviteBtnText}>+ Invite</Text>
             </Pressable>
           </View>
+
+          {/* Handover V2 Screen 15: Privacy Disclosure */}
+          <View style={styles.privacyNoteWrap}>
+            <Text style={styles.privacyNoteIcon}>🔒</Text>
+            <Text style={styles.privacyNoteText}>
+              Friends can see your yellow and red buddies so they can cook with you. Prices stay private.
+            </Text>
+          </View>
         </StickerCard>
 
         {/* ============================================================
@@ -220,9 +229,9 @@ export default function SocialScreen() {
             <View style={styles.friendsList}>
               {acceptedFriends.map((friend) => {
                 const friendItems = getFriendFridgeItems(friend.id);
-                const expiringCount = friendItems.filter((i) => {
-                  const hours = (new Date(i.expires_at).getTime() - Date.now()) / 36e5;
-                  return hours > 0 && hours <= 72;
+                const atRiskCount = friendItems.filter((i) => {
+                  const daysLeft = getDaysLeft(i.expires_at);
+                  return daysLeft <= 5;
                 }).length;
 
                 return (
@@ -247,20 +256,15 @@ export default function SocialScreen() {
                         )}
                       </View>
 
-                      {/* Info */}
+                      {/* Info (Handover V2 Screen 15: "N buddies need rescuing") */}
                       <View style={{ flex: 1 }}>
                         <Text style={styles.friendName}>{friend.display_name}</Text>
                         <Text style={styles.friendUsername}>@{friend.username}</Text>
-                        <View style={styles.badgesRow}>
-                          <Text style={styles.itemCountText}>
-                            🧊 {friendItems.length} items logged
-                          </Text>
-                          {expiringCount > 0 && (
-                            <Text style={styles.expiringNoticeText}>
-                              ⚠️ {expiringCount} expiring soon
-                            </Text>
-                          )}
-                        </View>
+                        <Text style={styles.friendStatusSubtitle}>
+                          {atRiskCount > 0
+                            ? `${atRiskCount} ${atRiskCount === 1 ? 'buddy needs' : 'buddies need'} rescuing`
+                            : 'All buddies are fresh'}
+                        </Text>
                       </View>
 
                       {/* View Fridge Indicator */}
@@ -520,5 +524,34 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.headingBold,
     fontSize: 12,
     color: '#2E5A36',
+  },
+  privacyNoteWrap: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 12,
+    backgroundColor: '#F7F3EE',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E8DED1',
+  },
+  privacyNoteIcon: {
+    fontSize: 12,
+    marginTop: 1,
+  },
+  privacyNoteText: {
+    flex: 1,
+    fontFamily: Fonts.bodyRegular,
+    fontSize: 12,
+    color: '#8A776A',
+    lineHeight: 16,
+  },
+  friendStatusSubtitle: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 13,
+    color: Colors.terracotta,
+    marginTop: 3,
   },
 });

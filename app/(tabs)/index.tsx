@@ -148,21 +148,33 @@ export default function ShelfScreen() {
 
   // Multi-select state
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [isSelectMode, setIsSelectMode] = useState<boolean>(false);
 
   const toggleItemSelection = (id: string) => {
     if (isViewingFriend) return;
-    setSelectedItemIds((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
-    );
+    setSelectedItemIds((prev) => {
+      const exists = prev.includes(id);
+      const next = exists ? prev.filter((i) => i !== id) : [...prev, id];
+      return next;
+    });
   };
 
   const clearSelection = () => {
     setSelectedItemIds([]);
   };
 
+  const handleToggleSelectMode = () => {
+    if (isSelectMode) {
+      setIsSelectMode(false);
+      setSelectedItemIds([]);
+    } else {
+      setIsSelectMode(true);
+    }
+  };
+
   const handleItemPress = (item: (typeof categorizedItems)[0]) => {
     if (isViewingFriend) return;
-    if (selectedItemIds.length > 0) {
+    if (isSelectMode) {
       toggleItemSelection(item.id);
     } else {
       setSelectedItemForRemove(item);
@@ -171,6 +183,9 @@ export default function ShelfScreen() {
 
   const handleItemLongPress = (item: (typeof categorizedItems)[0]) => {
     if (isViewingFriend) return;
+    if (!isSelectMode) {
+      setIsSelectMode(true);
+    }
     toggleItemSelection(item.id);
   };
 
@@ -183,18 +198,37 @@ export default function ShelfScreen() {
     if (mutualFriends.length === 0) {
       setIsFriendReqModalVisible(true);
     } else {
+      const targetIds =
+        selectedItemIds.length > 0
+          ? selectedItemIds
+          : categorizedItems
+              .filter((i) => i.urgencyStatus === "now" || i.urgencyStatus === "soon")
+              .map((i) => i.id);
       router.push({
         pathname: "/(tabs)/feasts",
-        params: { itemIds: selectedItemIds.join(",") },
+        params: targetIds.length > 0 ? { itemIds: targetIds.join(",") } : undefined,
       });
     }
   };
 
   const handleRescuePress = () => {
-    if (selectedItemIds.length === 0) return;
+    let targetIds = selectedItemIds;
+    if (targetIds.length === 0) {
+      const atRisk = categorizedItems.filter(
+        (i) => i.urgencyStatus === "now" || i.urgencyStatus === "soon"
+      );
+      targetIds =
+        atRisk.length > 0
+          ? atRisk.map((i) => i.id)
+          : categorizedItems.slice(0, 3).map((i) => i.id);
+    }
+    if (targetIds.length === 0) {
+      Alert.alert("No Groceries", "Stock your fridge first to rescue ingredients!");
+      return;
+    }
     router.push({
       pathname: "/rescue",
-      params: { itemIds: selectedItemIds.join(",") },
+      params: { itemIds: targetIds.join(",") },
     });
   };
 
@@ -302,10 +336,7 @@ export default function ShelfScreen() {
   }
 
   // Safe bottom padding preventing Android 3-button navigation bar overlap with stacked buttons
-  const safeBottomPadding =
-    selectedItemIds.length > 0
-      ? Math.max(insets.bottom, 16) + 160
-      : Math.max(insets.bottom, 16) + 40;
+  const safeBottomPadding = Math.max(insets.bottom, 16) + 160;
 
   return (
     <View style={styles.screen}>
@@ -373,30 +404,59 @@ export default function ShelfScreen() {
         {/* SECTION 3: "Your shelf" Section Header & Multi-Select Status */}
         <View style={styles.shelfSectionHeader}>
           <View style={styles.shelfHeaderRow}>
-            <Text style={styles.shelfTitle}>
-              {isViewingFriend
-                ? `${viewedFriend?.display_name}'s Fridge`
-                : "Your Fridge"}
-            </Text>
-            {!isViewingFriend && selectedItemIds.length === 0 ? (
-              <Text style={styles.shelfHelperText}>Hold item to select</Text>
-            ) : null}
-          </View>
-
-          {selectedItemIds.length > 0 && (
-            <View style={styles.selectionBar}>
-              <Text style={styles.selectionCountText}>
-                {selectedItemIds.length} {selectedItemIds.length === 1 ? "item" : "items"} selected
+            <View style={styles.shelfTitleCol}>
+              <Text style={styles.shelfTitle}>
+                {isViewingFriend
+                  ? `${viewedFriend?.display_name}'s Fridge`
+                  : isSelectMode
+                  ? "Pick ingredients"
+                  : "Your Fridge"}
               </Text>
+              {!isViewingFriend && (
+                isSelectMode ? (
+                  <View style={styles.pickSubtitleRow}>
+                    <Text style={styles.pickSubtitleCount}>
+                      {selectedItemIds.length} selected
+                    </Text>
+                    {selectedItemIds.length > 0 && (
+                      <>
+                        <Text style={styles.pickSubtitleDot}> · </Text>
+                        <Pressable onPress={clearSelection} hitSlop={6}>
+                          <Text style={styles.clearSelectionLink}>Clear</Text>
+                        </Pressable>
+                      </>
+                    )}
+                  </View>
+                ) : (
+                  <Text style={styles.shelfHelperText}>
+                    {rescueBadgeCount > 0
+                      ? `${rescueBadgeCount} need rescuing · ${urgentRedCount} urgent`
+                      : `${categorizedItems.length} items total`}
+                  </Text>
+                )
+              )}
+            </View>
+
+            {!isViewingFriend && (
               <Pressable
-                style={styles.cancelSelectionBtn}
-                onPress={clearSelection}
+                style={[
+                  styles.selectPillBtn,
+                  isSelectMode && styles.donePillBtn,
+                ]}
+                onPress={handleToggleSelectMode}
                 hitSlop={8}
               >
-                <Text style={styles.cancelSelectionText}>Cancel</Text>
+                <Text
+                  style={[
+                    styles.selectPillText,
+                    isSelectMode && styles.donePillText,
+                  ]}
+                >
+                  {isSelectMode ? "Done" : "Select"}
+                </Text>
               </Pressable>
-            </View>
-          )}
+            )}
+          </View>
         </View>
 
         {/* SECTION 4: Wooden Shelf Planks with Characters */}
@@ -419,27 +479,35 @@ export default function ShelfScreen() {
                     return (
                       <Pressable
                         key={item.id}
-                        style={[
-                          styles.foodSpot,
-                          isSelected && styles.foodSpotSelected,
-                        ]}
+                        style={styles.foodSpot}
                         onPress={() => handleItemPress(item)}
                         onLongPress={() => handleItemLongPress(item)}
                         delayLongPress={250}
                       >
-                        {isSelected && (
-                          <View style={styles.selectedCheckBadge}>
-                            <Text style={styles.selectedCheckText}>✓</Text>
-                          </View>
-                        )}
-                        <FoodCharacter
-                          foodKey={item.characterKey}
-                          mood={undefined}
-                          category={item.foodCategory}
-                          daysLeft={item.daysLeft}
-                          size={84}
-                          animate={true}
-                        />
+                        {/* Handover V2 Screen 5: dashed circle when unselected in pick mode, solid white circle with dark ink border when selected */}
+                        <View
+                          style={[
+                            styles.characterRingNormal,
+                            isSelectMode &&
+                              (isSelected
+                                ? styles.characterRingPicked
+                                : styles.characterRingUnpicked),
+                          ]}
+                        >
+                          {isSelectMode && isSelected && (
+                            <View style={styles.selectedCheckBadge}>
+                              <Text style={styles.selectedCheckText}>✓</Text>
+                            </View>
+                          )}
+                          <FoodCharacter
+                            foodKey={item.characterKey}
+                            mood={undefined}
+                            category={item.foodCategory}
+                            daysLeft={item.daysLeft}
+                            size={76}
+                            animate={true}
+                          />
+                        </View>
 
                         {/* Name Label */}
                         <Text style={styles.foodName} numberOfLines={1}>
@@ -482,8 +550,8 @@ export default function ShelfScreen() {
         )}
       </ScrollView>
 
-      {/* SECTION 5: Floating Bottom Action Buttons (Only shown when items selected) */}
-      {selectedItemIds.length > 0 && !isViewingFriend && (
+      {/* SECTION 5: Floating Bottom Action Buttons (Handover V2 Screen 4 & 5) */}
+      {!isViewingFriend && (
         <View
           style={[
             styles.bottomFloatingBar,
@@ -492,14 +560,22 @@ export default function ShelfScreen() {
         >
           <View style={styles.bottomButtonsStack}>
             <StickerButton
-              title={`Rescue ingredients (${selectedItemIds.length})`}
+              title={
+                isSelectMode && selectedItemIds.length > 0
+                  ? `Rescue ingredients [${selectedItemIds.length}]`
+                  : "Rescue ingredients"
+              }
               onPress={handleRescuePress}
               variant="primary"
               size="large"
             />
 
             <StickerButton
-              title="Feast mode"
+              title={
+                isSelectMode && selectedItemIds.length > 0
+                  ? `Feast mode [${selectedItemIds.length}]`
+                  : "Feast mode"
+              }
               onPress={handleFeastModePress}
               variant="secondary"
               size="large"
@@ -620,8 +696,11 @@ const styles = StyleSheet.create({
   shelfHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "baseline",
+    alignItems: "center",
     marginBottom: 8,
+  },
+  shelfTitleCol: {
+    flex: 1,
   },
   shelfTitle: {
     fontFamily: Fonts.headingBold,
@@ -632,6 +711,87 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bodySemiBold,
     fontSize: 13,
     color: "#8A776A",
+    marginTop: 2,
+  },
+  selectPillBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    backgroundColor: "#F0EAE1",
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: Colors.ink,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  selectPillText: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 14,
+    color: Colors.ink,
+  },
+  donePillBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    backgroundColor: Colors.terracotta,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: Colors.ink,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  donePillText: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 14,
+    color: "#FAF6F0",
+  },
+  pickSubtitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 2,
+  },
+  pickSubtitleCount: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 13,
+    color: Colors.terracotta,
+  },
+  pickSubtitleDot: {
+    fontFamily: Fonts.bodyRegular,
+    fontSize: 13,
+    color: "#8A776A",
+  },
+  clearSelectionLink: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 13,
+    color: Colors.ink,
+    textDecorationLine: "underline",
+  },
+  characterRingNormal: {
+    width: 86,
+    height: 86,
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+  },
+  characterRingUnpicked: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    borderWidth: 2,
+    borderColor: "#D9CFC4",
+    borderStyle: "dashed",
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+  },
+  characterRingPicked: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 2,
+    borderColor: Colors.ink,
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
   },
   selectionBar: {
     flexDirection: "row",
