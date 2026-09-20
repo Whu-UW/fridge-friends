@@ -755,6 +755,7 @@ function buildLiveFeastFromDb(
   liveFriends: FriendEntry[],
   liveItems: FridgeItemRow[]
 ): FeastInvite {
+  const userFirstName = (user?.display_name || user?.username || 'Chef').split(' ')[0];
   const userExpiring = liveItems
     .filter((i) => i.user_id === user.id)
     .map((i) => i.name)
@@ -765,10 +766,11 @@ function buildLiveFeastFromDb(
     .slice(0, 2);
 
   const accepted = liveFriends.filter((f) => f.status === 'accepted');
+  const friendFirstName = (accepted[0]?.display_name || accepted[0]?.username || 'Friend').split(' ')[0];
   const invited: FeastFriendStatus[] = liveFriends.map((f) => ({
     id: f.id,
-    name: f.display_name,
-    username: f.username,
+    name: f.display_name || 'Friend',
+    username: f.username || `user_${f.id}`,
     avatarUrl: f.avatar_url || '',
     status: f.status === 'accepted' ? ('accepted' as const) : ('pending' as const),
   }));
@@ -781,7 +783,7 @@ function buildLiveFeastFromDb(
     title: `Zero-Waste ${userExpiring[0] || 'Market'} & Fresh Greens Skillet`,
     cookTime: '25 mins',
     isCollaborative: true,
-    circleName: `${user.display_name.split(' ')[0]}'s Supper Circle`,
+    circleName: `${userFirstName}'s Supper Circle`,
     focusExpiringItems: [...userExpiring, ...friendExpiring].slice(0, 3),
     ingredients: liveItems.slice(0, 5).map((item, idx) => ({
       id: `ing-live-${idx}`,
@@ -791,8 +793,8 @@ function buildLiveFeastFromDb(
       owner_id: item.user_id,
       owner_name:
         item.user_id === user.id
-          ? user.display_name.split(' ')[0]
-          : accepted[0]?.display_name.split(' ')[0] || 'Friend',
+          ? userFirstName
+          : friendFirstName,
       is_expiring_item: true,
     })),
     cookingTasks: [
@@ -800,17 +802,17 @@ function buildLiveFeastFromDb(
         id: 'task-live-1',
         recipe_id: cand1RecipeId,
         step_number: 1,
-        instruction: `Wash and slice ${userExpiring[0] || 'ingredients'} - ${user.display_name.split(' ')[0]}`,
+        instruction: `Wash and slice ${userExpiring[0] || 'ingredients'} - ${userFirstName}`,
         assigned_to_id: user.id,
-        assigned_to_name: user.display_name.split(' ')[0],
+        assigned_to_name: userFirstName,
       },
       {
         id: 'task-live-2',
         recipe_id: cand1RecipeId,
         step_number: 2,
-        instruction: `Sauté with olive oil and spices - ${accepted[0]?.display_name.split(' ')[0] || 'Friend'}`,
+        instruction: `Sauté with olive oil and spices - ${friendFirstName}`,
         assigned_to_id: accepted[0]?.id || 'friend-1',
-        assigned_to_name: accepted[0]?.display_name.split(' ')[0] || 'Friend',
+        assigned_to_name: friendFirstName,
       },
     ],
     projectedImpact: {
@@ -826,7 +828,7 @@ function buildLiveFeastFromDb(
     title: `Harvest Braised Greens with ${friendExpiring[0] || 'Seasonal Veggies'}`,
     cookTime: '20 mins',
     isCollaborative: true,
-    circleName: `${user.display_name.split(' ')[0]}'s Supper Circle`,
+    circleName: `${userFirstName}'s Supper Circle`,
     focusExpiringItems: liveItems.slice(2, 5).map((i) => i.name),
     ingredients: liveItems.slice(2, 6).map((item, idx) => ({
       id: `ing-live-2-${idx}`,
@@ -836,8 +838,8 @@ function buildLiveFeastFromDb(
       owner_id: item.user_id,
       owner_name:
         item.user_id === user.id
-          ? user.display_name.split(' ')[0]
-          : accepted[0]?.display_name.split(' ')[0] || 'Friend',
+          ? userFirstName
+          : friendFirstName,
       is_expiring_item: true,
     })),
     cookingTasks: [
@@ -845,9 +847,9 @@ function buildLiveFeastFromDb(
         id: 'task-live-2-1',
         recipe_id: cand2RecipeId,
         step_number: 1,
-        instruction: `Combine ingredients in pan and simmer - ${user.display_name.split(' ')[0]}`,
+        instruction: `Combine ingredients in pan and simmer - ${userFirstName}`,
         assigned_to_id: user.id,
-        assigned_to_name: user.display_name.split(' ')[0],
+        assigned_to_name: userFirstName,
       },
     ],
     projectedImpact: {
@@ -860,9 +862,9 @@ function buildLiveFeastFromDb(
 
   return {
     id: `feast-live-${user.id}`,
-    partyName: `${user.display_name.split(' ')[0]}'s Zero-Waste Feast`,
+    partyName: `${userFirstName}'s Zero-Waste Feast`,
     hostId: user.id,
-    hostName: user.display_name,
+    hostName: user.display_name || userFirstName,
     candidateRecipes: [
       {
         recipe: candidate1,
@@ -1002,7 +1004,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       // 2. Bind current user profile from live database
       const samUser = users.find(
-        (u) => u.username === 'sam' || u.name.toLowerCase().includes('sam')
+        (u) =>
+          (u.username && u.username.toLowerCase() === 'sam') ||
+          (u.name && u.name.toLowerCase().includes('sam'))
       );
       const effectiveUserId = targetUserId && users.some((u) => u.id === targetUserId)
         ? targetUserId
@@ -1511,8 +1515,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // Check if matching backend user exists
     const matchingBackendUser = availableBackendUsers.find(
       (u) =>
-        u.email.toLowerCase().includes(cleanUsername) ||
-        u.name.toLowerCase().includes(cleanUsername)
+        (u.username && u.username.toLowerCase().includes(cleanUsername)) ||
+        (u.email && u.email.toLowerCase().includes(cleanUsername)) ||
+        (u.name && u.name.toLowerCase().includes(cleanUsername))
     );
     if (matchingBackendUser && backendConnected) {
       backendApi
