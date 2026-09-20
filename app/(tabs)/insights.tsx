@@ -37,6 +37,11 @@ export default function ProfileScreen() {
     isFriendsHardcoded,
     isFeastsHardcoded,
     isRecipesHardcoded,
+    // Supabase Auth
+    supabaseUser,
+    isAuthConfigured,
+    openAuthModal,
+    logoutFromSupabase,
   } = useApp();
 
   // Diagnostics State
@@ -241,8 +246,14 @@ export default function ProfileScreen() {
       {
         text: 'Log Out',
         style: 'destructive',
-        onPress: () =>
-          Alert.alert('Logged Out', 'You have been signed out of your session.'),
+        onPress: async () => {
+          if (supabaseUser) {
+            await logoutFromSupabase();
+            Alert.alert('Logged Out', 'You have been signed out of Supabase Cloud.');
+          } else {
+            Alert.alert('Logged Out', 'You have been signed out of your session.');
+          }
+        },
       },
     ]);
   };
@@ -317,10 +328,92 @@ export default function ProfileScreen() {
             </Text>
             <Text style={styles.heroUsername}>@{currentUser.username}</Text>
             <Text style={styles.heroEmail}>{currentUser.email}</Text>
-            <View style={styles.ecoBadge}>
-              <Text style={styles.ecoBadgeText}>🏆 Zero-Waste Champion</Text>
+            <View style={styles.heroBadgesRow}>
+              <View style={styles.ecoBadge}>
+                <Text style={styles.ecoBadgeText}>🏆 Zero-Waste Champion</Text>
+              </View>
+              {supabaseUser ? (
+                <View style={styles.cloudSyncedBadge}>
+                  <Text style={styles.cloudSyncedBadgeText}>☁️ Cloud Synced</Text>
+                </View>
+              ) : (
+                <Pressable
+                  style={styles.cloudSignInBadge}
+                  onPress={openAuthModal}
+                  accessibilityLabel="Sign in with Supabase"
+                >
+                  <Text style={styles.cloudSignInBadgeText}>✨ Sign In</Text>
+                </Pressable>
+              )}
             </View>
           </View>
+        </View>
+
+        {/* Supabase Cloud Account Card */}
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeaderRow}>
+            <View style={styles.cloudHeaderTitleRow}>
+              <Text style={styles.sectionTitle}>☁️ Cloud Account</Text>
+              <View
+                style={[
+                  styles.cloudStatusPill,
+                  supabaseUser ? styles.cloudStatusPillActive : styles.cloudStatusPillGuest,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.cloudStatusPillText,
+                    supabaseUser ? styles.cloudStatusPillTextActive : styles.cloudStatusPillTextGuest,
+                  ]}
+                >
+                  {supabaseUser ? '🟢 Supabase Connected' : '🟡 Guest Session'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {supabaseUser ? (
+            <View style={styles.cloudDetailsBox}>
+              <Text style={styles.cloudDetailsSub}>
+                Your pantry groceries, friendships, and feasts are linked to your Supabase identity:
+              </Text>
+              <View style={styles.cloudInfoRow}>
+                <Text style={styles.cloudInfoLabel}>Supabase Email:</Text>
+                <Text style={styles.cloudInfoVal}>{supabaseUser.email}</Text>
+              </View>
+              <View style={styles.cloudInfoRow}>
+                <Text style={styles.cloudInfoLabel}>Database User ID:</Text>
+                <Text style={styles.cloudInfoVal}>#{activeBackendUserId}</Text>
+              </View>
+              <View style={styles.cloudInfoRow}>
+                <Text style={styles.cloudInfoLabel}>Auth Status:</Text>
+                <Text style={styles.cloudInfoValSuccess}>Verified Session</Text>
+              </View>
+
+              <Pressable
+                style={styles.cloudSignOutBtn}
+                onPress={handleLogOut}
+                accessibilityLabel="Sign Out of Supabase"
+              >
+                <Text style={styles.cloudSignOutBtnText}>Sign Out of Supabase</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.cloudDetailsBox}>
+              <Text style={styles.cloudDetailsSub}>
+                You are currently browsing with backend user #{activeBackendUserId} ({currentUser.display_name}).
+                Sign in or create an account with email to secure your data and seamlessly collaborate with friends!
+              </Text>
+
+              <Pressable
+                style={styles.cloudSignInPrimaryBtn}
+                onPress={openAuthModal}
+                accessibilityLabel="Sign In or Create Account"
+              >
+                <Text style={styles.cloudSignInPrimaryBtnText}>✨ Sign In / Create Account</Text>
+              </Pressable>
+            </View>
+          )}
         </View>
 
         {/* Overall Food Rescued Section */}
@@ -776,12 +869,138 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
-    marginTop: 6,
   },
   ecoBadgeText: {
     fontSize: 11,
     fontWeight: '700',
     color: '#166534',
+  },
+  heroBadgesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 6,
+    alignItems: 'center',
+  },
+  cloudSyncedBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    alignSelf: 'flex-start',
+  },
+  cloudSyncedBadgeText: {
+    color: '#047857',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  cloudSignInBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    alignSelf: 'flex-start',
+  },
+  cloudSignInBadgeText: {
+    color: '#1D4ED8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  cloudHeaderTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  cloudStatusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  cloudStatusPillActive: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  cloudStatusPillGuest: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FDE68A',
+  },
+  cloudStatusPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  cloudStatusPillTextActive: {
+    color: '#065F46',
+  },
+  cloudStatusPillTextGuest: {
+    color: '#92400E',
+  },
+  cloudDetailsBox: {
+    marginTop: 10,
+  },
+  cloudDetailsSub: {
+    fontSize: 13,
+    color: '#4B5563',
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  cloudInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  cloudInfoLabel: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  cloudInfoVal: {
+    fontSize: 13,
+    color: '#111827',
+    fontWeight: '600',
+  },
+  cloudInfoValSuccess: {
+    fontSize: 13,
+    color: '#059669',
+    fontWeight: '700',
+  },
+  cloudSignInPrimaryBtn: {
+    backgroundColor: '#059669',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 6,
+    shadowColor: '#059669',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cloudSignInPrimaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  cloudSignOutBtn: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  cloudSignOutBtnText: {
+    color: '#DC2626',
+    fontSize: 13,
+    fontWeight: '700',
   },
 
   /* Section Card */

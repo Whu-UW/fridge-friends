@@ -1,24 +1,34 @@
 /**
- * Supabase Client Configuration
- *
- * When you are ready to connect to your live Supabase project:
- * 1. Install supabase-js: `npx expo install @supabase/supabase-js @react-native-async-storage/async-storage`
- * 2. Add your credentials to .env:
- *    EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
- *    EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
- * 3. Uncomment the live client initialization below.
+ * Supabase Client Configuration with AsyncStorage Session Persistence
  */
 
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://mock.supabase.co';
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'mock-anon-key';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createClient } from '@supabase/supabase-js';
+
+const rawUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const rawKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
 export const isSupabaseConfigured = (): boolean => {
   return (
-    Boolean(process.env.EXPO_PUBLIC_SUPABASE_URL) &&
-    Boolean(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY) &&
-    process.env.EXPO_PUBLIC_SUPABASE_URL !== 'https://mock.supabase.co'
+    Boolean(rawUrl) &&
+    Boolean(rawKey) &&
+    rawUrl !== 'https://placeholder.supabase.co' &&
+    rawUrl !== 'https://mock.supabase.co' &&
+    rawKey !== 'mock-anon-key'
   );
 };
+
+const SUPABASE_URL = isSupabaseConfigured() ? rawUrl! : 'https://placeholder.supabase.co';
+const SUPABASE_ANON_KEY = isSupabaseConfigured() ? rawKey! : 'placeholder-anon-key';
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    storage: AsyncStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+  },
+});
 
 export const supabaseConfig = {
   url: SUPABASE_URL,
