@@ -48,10 +48,7 @@ export default function MealsScreen() {
     return feasts.filter(
       (f) =>
         f.hostId !== currentUser.id &&
-        (f.userRsvpStatus === 'pending' ||
-          f.invitedFriends.some(
-            (friend) => friend.id === currentUser.id && friend.status === 'pending'
-          ))
+        f.userRsvpStatus === 'pending'
     );
   }, [feasts, currentUser.id]);
 
@@ -251,12 +248,6 @@ export default function MealsScreen() {
               <View style={styles.sectionBlock}>
                 <Text style={styles.sectionHeading}>Respond to Invite</Text>
                 {incomingInvites.map((invite) => {
-                  const isAccepted =
-                    invite.userRsvpStatus === 'accepted' ||
-                    invite.invitedFriends.some(
-                      (f) => f.id === currentUser.id && f.status === 'accepted'
-                    );
-
                   return (
                     <StickerCard
                       key={invite.id}
@@ -264,61 +255,8 @@ export default function MealsScreen() {
                       borderRadius={22}
                       style={styles.inviteCard}
                     >
-                      {isAccepted ? (
-                        /* Handover V2 Screen 14: You're In! Confirmed Feast View */
-                        <View style={styles.acceptedInviteWrap}>
-                          <View style={styles.youreInBanner}>
-                            <Text style={styles.youreInTitle}>You're in!</Text>
-                            <Text style={styles.youreInSubtitle}>
-                              See you {formatScheduledFor(invite.scheduledFor) || 'soon'}
-                            </Text>
-                          </View>
-
-                          <Text style={styles.inviteRecipeTitle}>
-                            {invite.recipeTitle} ({invite.cookTime || '25 min'})
-                          </Text>
-
-                          {invite.bringBreakdown && invite.bringBreakdown.length > 0 && (
-                            <View style={styles.bringBox}>
-                              <Text style={styles.bringBoxHeading}>Who's bringing what:</Text>
-                              {invite.bringBreakdown.map((item, bIdx) => (
-                                <Text key={bIdx} style={styles.bringLine}>
-                                  <Text style={styles.bringWho}>{item.who}: </Text>
-                                  {item.items}
-                                </Text>
-                              ))}
-                            </View>
-                          )}
-
-                          <Text style={styles.confirmedAttendeesHeading}>
-                            Confirmed attendees:
-                          </Text>
-                          <View style={styles.confirmedAttendeesRow}>
-                            {invite.invitedFriends
-                              .filter((f) => f.status === 'accepted')
-                              .map((f) => (
-                                <View key={f.id} style={styles.attendeePill}>
-                                  <Text style={styles.attendeePillCheck}>✓</Text>
-                                  <Text style={styles.attendeePillName}>
-                                    {f.name.split(' ')[0]}
-                                  </Text>
-                                </View>
-                              ))}
-                          </View>
-
-                          <Pressable
-                            style={styles.cantMakeItBtn}
-                            onPress={() => handleDeclineInvite(invite)}
-                            hitSlop={8}
-                          >
-                            <Text style={styles.cantMakeItText}>
-                              Can't make it? Let them know
-                            </Text>
-                          </Pressable>
-                        </View>
-                      ) : (
-                        /* Handover V2 Screen 13: Incoming Feast Invite Card */
-                        <>
+                      {/* Handover V2 Screen 13: Incoming Feast Invite Card */}
+                      <>
                           <View style={styles.inviteHeader}>
                             <View style={{ flex: 1 }}>
                               <Text style={styles.inviteHost}>
@@ -375,7 +313,6 @@ export default function MealsScreen() {
                             </Pressable>
                           </View>
                         </>
-                      )}
                     </StickerCard>
                   );
                 })}
@@ -395,8 +332,75 @@ export default function MealsScreen() {
                   </Text>
                 </StickerCard>
               ) : (
-                pendingFeasts.map((feast) => (
-                  <StickerCard
+                pendingFeasts.map((feast) => {
+                  const isHost = feast.hostId === currentUser.id;
+                  
+                  if (!isHost) {
+                    return (
+                      <StickerCard
+                        key={feast.id}
+                        backgroundColor="#FFF8E7"
+                        borderRadius={22}
+                        style={styles.inviteCard}
+                      >
+                        {/* Handover V2 Screen 14: You're In! Confirmed Feast View */}
+                        <View style={styles.acceptedInviteWrap}>
+                          <View style={styles.youreInBanner}>
+                            <Text style={styles.youreInTitle}>You're in!</Text>
+                            <Text style={styles.youreInSubtitle}>
+                              See you {formatScheduledFor(feast.scheduledFor) || 'soon'}
+                            </Text>
+                          </View>
+
+                          <Text style={styles.inviteRecipeTitle}>
+                            {feast.recipeTitle} ({feast.cookTime || '25 min'})
+                          </Text>
+
+                          {feast.bringBreakdown && feast.bringBreakdown.length > 0 && (
+                            <View style={styles.bringBox}>
+                              <Text style={styles.bringBoxHeading}>Who's bringing what:</Text>
+                              {feast.bringBreakdown.map((item, bIdx) => (
+                                <Text key={bIdx} style={styles.bringLine}>
+                                  <Text style={styles.bringWho}>{item.who}: </Text>
+                                  {item.items}
+                                </Text>
+                              ))}
+                            </View>
+                          )}
+
+                          <Text style={styles.confirmedAttendeesHeading}>
+                            Confirmed attendees:
+                          </Text>
+                          <View style={styles.confirmedAttendeesRow}>
+                            {feast.invitedFriends
+                              .filter((f) => f.status === 'accepted')
+                              .map((f) => (
+                                <View key={f.id} style={styles.attendeePill}>
+                                  <Text style={styles.attendeePillCheck}>✓</Text>
+                                  <Text style={styles.attendeePillName}>
+                                    {f.name.split(' ')[0]}
+                                  </Text>
+                                </View>
+                              ))}
+                          </View>
+
+                          <Pressable
+                            style={styles.cantMakeItBtn}
+                            onPress={() => handleDeclineInvite(feast)}
+                            hitSlop={8}
+                          >
+                            <Text style={styles.cantMakeItText}>
+                              Can't make it? Let them know
+                            </Text>
+                          </Pressable>
+                        </View>
+                      </StickerCard>
+                    );
+                  }
+
+                  return (
+                    <StickerCard
+
                     key={feast.id}
                     backgroundColor={Colors.paper}
                     borderRadius={22}
@@ -456,9 +460,10 @@ export default function MealsScreen() {
                       />
                     </View>
                   </StickerCard>
-                ))
-              )}
-            </View>
+                );
+              })
+            )}
+          </View>
 
             {/* 3. COOKING IN PROGRESS FEASTS */}
             <View style={styles.sectionBlock}>
