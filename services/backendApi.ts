@@ -3,15 +3,15 @@
  * Target Base URL: https://fridge-friends-be-144bbbd9.fastapicloud.dev
  */
 
-import {
-  FridgeItemRow,
-  ProfileRow,
-  RecipeComposite,
-  RecipeIngredientRow,
-  RecipeTaskRow,
-} from './supabase/types';
-import type { FriendEntry, FeastInvite, FeastFriendStatus } from '../context/AppContext';
+import type { FeastFriendStatus, FeastInvite, FriendEntry } from '../context/AppContext';
 import { getLocalDateString } from '../utils/dateUtils';
+import {
+    FridgeItemRow,
+    ProfileRow,
+    RecipeComposite,
+    RecipeIngredientRow,
+    RecipeTaskRow,
+} from './supabase/types';
 
 const rawBackendUrl =
   process.env.EXPO_PUBLIC_BACKEND_URL || 'https://fridge-friends-be-144bbbd9.fastapicloud.dev';

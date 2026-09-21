@@ -1,7 +1,7 @@
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
-import { Platform, Alert } from 'react-native';
+import * as Device from 'expo-device';
+import * as Notifications from 'expo-notifications';
+import { Alert, Platform } from 'react-native';
 
 /**
  * Registers the device for push notifications and returns the Expo push token.
