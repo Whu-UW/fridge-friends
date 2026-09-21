@@ -67,6 +67,9 @@ export interface BackendGroceryItem {
   quantity: number;
   unit: string | null;
   category: string | null;
+  price?: number | null;
+  outcome?: 'on_shelf' | 'used' | 'wasted';
+  rescued?: boolean;
   expires_on: string | null; // YYYY-MM-DD
   purchased_on: string | null; // YYYY-MM-DD
   consumed: boolean;
@@ -85,6 +88,7 @@ export interface BackendGroceryItemCreate {
   quantity?: number;
   unit?: string | null;
   category?: string | null;
+  price?: number | null;
   expires_on?: string | null;
   purchased_on?: string | null;
 }
@@ -94,6 +98,7 @@ export interface BackendGroceryItemUpdate {
   quantity?: number;
   unit?: string | null;
   category?: string | null;
+  price?: number | null;
   expires_on?: string | null;
   purchased_on?: string | null;
   consumed?: boolean;
@@ -110,8 +115,9 @@ export interface BackendFriend {
 
 export interface BackendAttendeeRead {
   user_id: number;
+  username?: string;
   name: string;
-  email: string;
+  email: string | null;
   response: 'invited' | 'accepted' | 'declined';
   responded_at: string | null;
   is_host: boolean;
@@ -275,7 +281,7 @@ export function toFrontendFridgeItem(backendItem: BackendGroceryItem): FridgeIte
     shopping_trip_id: null,
     name: backendItem.name,
     category: backendItem.category || 'Other',
-    price: 3.99, // default nominal price for rescued tracking
+    price: backendItem.price ?? 0,
     quantity: quantityLabel,
     date_bought: purchasedAtIso,
     expires_at: expiresAtIso,
@@ -290,7 +296,8 @@ export function toBackendGroceryItemCreate(
   category?: string,
   expiresAtIso?: string,
   dateBoughtIso?: string,
-  quantityStr?: string
+  quantityStr?: string,
+  price?: number
 ): BackendGroceryItemCreate {
   let quantity = 1;
   let unit: string | null = null;
@@ -321,6 +328,8 @@ export function toBackendGroceryItemCreate(
     quantity,
     unit,
     category: category || 'pantry',
+    // Without a price an item is left out of waste and spending entirely
+    price: price && price > 0 ? price : null,
     expires_on,
     purchased_on,
   };
@@ -408,7 +417,10 @@ export function toFrontendRecipeFromBackend(
   };
 }
 
-export function toFrontendFeast(backendFeast: BackendFeastRead): FeastInvite {
+export function toFrontendFeast(
+  backendFeast: BackendFeastRead,
+  currentUserId?: number
+): FeastInvite {
   const feastId = String(backendFeast.id);
   const primaryRecipe = toFrontendRecipeFromBackend(
     backendFeast.recipe,
@@ -428,13 +440,38 @@ export function toFrontendFeast(backendFeast: BackendFeastRead): FeastInvite {
       return {
         id: String(attendee.user_id),
         name: attendee.name,
-        username:
-          attendee.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_') ||
-          `user_${attendee.user_id}`,
+        username: attendee.username || `user_${attendee.user_id}`,
         avatarUrl: getUserAvatar(attendee.user_id, attendee.name),
         status,
       };
     });
+
+  // The signed-in user's own RSVP, so Meals can show invites awaiting a reply
+  const isHost = currentUserId !== undefined && backendFeast.host_id === currentUserId;
+  const ownAttendee =
+    currentUserId === undefined
+      ? undefined
+      : backendFeast.attendees.find((a) => a.user_id === currentUserId);
+  const userRsvpStatus: FeastInvite['userRsvpStatus'] = isHost
+    ? 'host'
+    : ownAttendee
+    ? ownAttendee.response === 'accepted'
+      ? 'accepted'
+      : ownAttendee.response === 'declined'
+      ? 'declined'
+      : 'pending'
+    : undefined;
+
+  // Who is bringing what, grouped by contributor
+  const bringMap = new Map<string, string[]>();
+  (backendFeast.recipe?.uses || []).forEach((use) => {
+    const who = use.from_users && use.from_users[0] ? use.from_users[0] : 'Party Host';
+    bringMap.set(who, [...(bringMap.get(who) || []), use.name]);
+  });
+  const bringBreakdown = Array.from(bringMap.entries()).map(([who, items]) => ({
+    who: currentUserId !== undefined && who === backendFeast.host_name && isHost ? 'You' : who,
+    items: items.join(', '),
+  }));
 
   const candidateRecipes = [
     {
@@ -459,11 +496,70 @@ export function toFrontendFeast(backendFeast: BackendFeastRead): FeastInvite {
     dollarsSaved: primaryRecipe.projectedImpact.dollarsSaved,
     invitedFriends,
     status: 'confirmed',
+    userRsvpStatus,
+    bringBreakdown,
+    cookingTasks: primaryRecipe.cookingTasks.map((task) => ({
+      step_number: task.step_number,
+      instruction: task.instruction,
+    })),
     createdAt: backendFeast.created_at,
     scheduledFor: backendFeast.scheduled_for || undefined,
     invitationsSent: backendFeast.invitations_sent,
     invitationsPending: backendFeast.invitations_pending,
   };
+}
+
+const WEEKDAYS = [
+  'sunday',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+];
+
+/**
+ * Turn a label like "Tonight at 6:30 PM" or "Friday at 7:00 PM" into an ISO
+ * datetime the backend accepts. Anything unrecognised returns null, so an odd
+ * label leaves the feast undated instead of failing the whole request.
+ */
+export function toBackendScheduledFor(label?: string): string | null {
+  if (!label) return null;
+
+  const trimmed = label.trim();
+  // Already a date or datetime
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed;
+
+  const lower = trimmed.toLowerCase();
+  const when = new Date();
+
+  const timeMatch = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/);
+  let hours = 19;
+  let minutes = 0;
+  if (timeMatch) {
+    hours = parseInt(timeMatch[1], 10) % 12;
+    minutes = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
+    if (timeMatch[3] === 'pm') hours += 12;
+  }
+
+  if (lower.includes('tomorrow')) {
+    when.setDate(when.getDate() + 1);
+  } else {
+    const weekdayIndex = WEEKDAYS.findIndex((day) => lower.includes(day));
+    if (weekdayIndex >= 0) {
+      // The next time that weekday comes round
+      const delta = (weekdayIndex - when.getDay() + 7) % 7 || 7;
+      when.setDate(when.getDate() + delta);
+    } else if (!lower.includes('tonight') && !lower.includes('today')) {
+      const parsed = new Date(trimmed);
+      if (!isNaN(parsed.getTime())) return parsed.toISOString();
+      return null;
+    }
+  }
+
+  when.setHours(hours, minutes, 0, 0);
+  return when.toISOString();
 }
 
 export function toBackendFeastCreate(
@@ -510,7 +606,7 @@ export function toBackendFeastCreate(
     host_id: hostId,
     recipe: backendRecipe,
     attendee_ids: attendeeIds,
-    scheduled_for: scheduledForIso || null,
+    scheduled_for: toBackendScheduledFor(scheduledForIso),
   };
 }
 
@@ -837,6 +933,22 @@ export const backendApi = {
   async resendFeastInvitations(feastId: number): Promise<BackendFeastRead> {
     return request<BackendFeastRead>(`/feasts/${feastId}/resend-invitations`, {
       method: 'POST',
+    });
+  },
+
+  /**
+   * Take an item off the shelf as eaten (`used`) or binned (`wasted`).
+   * This is what the waste-and-spending screen counts, so items are resolved
+   * rather than deleted.
+   */
+  async resolveGroceryItem(
+    itemId: number,
+    outcome: 'used' | 'wasted',
+    resolvedOn?: string
+  ): Promise<BackendGroceryItem> {
+    return request<BackendGroceryItem>(`/grocery-items/${itemId}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ outcome, resolved_on: resolvedOn ?? null }),
     });
   },
 

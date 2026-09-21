@@ -1,3 +1,4 @@
+import type { BackendBuddy } from './backendApi';
 /**
  * Food to Character & Category Lookup Engine
  * Implements category rules and freshness formulas from handover.md and characters.json
@@ -49,8 +50,10 @@ export function buddyKeyFromBackend(buddy?: string | null): CharacterKey | undef
 }
 
 /** Local character key -> backend buddy enum value */
-export function buddyToBackend(key: CharacterKey): string | undefined {
-  return STARTER_BUDDIES.find((b) => b.key === key)?.name.toLowerCase();
+export function buddyToBackend(key: CharacterKey): BackendBuddy | undefined {
+  return STARTER_BUDDIES.find((b) => b.key === key)?.name.toLowerCase() as
+    | BackendBuddy
+    | undefined;
 }
 
 /**
