@@ -6,11 +6,11 @@
 import type { FeastFriendStatus, FeastInvite, FriendEntry } from '../context/AppContext';
 import { getLocalDateString } from '../utils/dateUtils';
 import {
-    FridgeItemRow,
-    ProfileRow,
-    RecipeComposite,
-    RecipeIngredientRow,
-    RecipeTaskRow,
+  FridgeItemRow,
+  ProfileRow,
+  RecipeComposite,
+  RecipeIngredientRow,
+  RecipeTaskRow,
 } from './supabase/types';
 
 const rawBackendUrl =
