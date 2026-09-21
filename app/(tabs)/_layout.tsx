@@ -1,16 +1,18 @@
 import { Tabs } from "expo-router";
 import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors, Fonts } from "../../constants/Theme";
 import {
-  FridgeIcon,
-  MealsIcon,
-  FriendsIcon,
-  YouIcon,
+    FridgeIcon,
+    FriendsIcon,
+    MealsIcon,
+    YouIcon,
 } from "../../components/ui/AppIcons";
+import { Colors, Fonts } from "../../constants/Theme";
+import { useApp } from "../../context/AppContext";
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const { unreadNotificationCount } = useApp();
 
   // Android edge-to-edge system navigation bar safe area handling
   const bottomPadding =
@@ -55,6 +57,8 @@ export default function TabLayout() {
           title: "Meals",
           tabBarLabel: "Meals",
           tabBarIcon: ({ color }) => <MealsIcon size={22} color={color} />,
+          tabBarBadge: unreadNotificationCount > 0 ? unreadNotificationCount : undefined,
+          tabBarBadgeStyle: { backgroundColor: '#E6795A', fontSize: 11 },
         }}
       />
 

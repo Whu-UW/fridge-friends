@@ -1,44 +1,44 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import {
-  View,
-  Text,
-  Modal,
-  Pressable,
-  ScrollView,
-  TextInput,
-  StyleSheet,
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-} from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { Colors, Fonts, Radius } from '../constants/Theme';
-import StickerCard from './ui/StickerCard';
-import StickerButton from './ui/StickerButton';
-import FoodCharacter from './FoodCharacter';
-import CalendarPickerModal from './CalendarPickerModal';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ReceiptIcon,
-  CameraIcon,
-  GalleryIcon,
-  CalendarIcon,
-} from './ui/AppIcons';
-import {
-  isGeminiKeyConfigured,
-  scanGroceryReceiptWithGemini,
-  scanGroceryReceiptMock,
-  ScannedReceiptResult,
-  ScannedReceiptItem,
-} from '../services/receiptOcrService';
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
+} from 'react-native';
+import { Colors, Fonts } from '../constants/Theme';
 import { lookupFoodCharacter } from '../services/foodCharacterLookup';
 import {
-  getLocalDateString,
-  formatDisplayDate,
-  toMiddayIso,
-  diffCalendarDays,
-  addDaysToLocalDate,
+    isGeminiKeyConfigured,
+    scanGroceryReceiptMock,
+    scanGroceryReceiptWithGemini,
+    ScannedReceiptItem,
+    ScannedReceiptResult,
+} from '../services/receiptOcrService';
+import {
+    addDaysToLocalDate,
+    diffCalendarDays,
+    formatDisplayDate,
+    getLocalDateString,
+    toMiddayIso,
 } from '../utils/dateUtils';
+import CalendarPickerModal from './CalendarPickerModal';
+import FoodCharacter from './FoodCharacter';
+import {
+    CalendarIcon,
+    CameraIcon,
+    GalleryIcon,
+    ReceiptIcon,
+} from './ui/AppIcons';
+import StickerButton from './ui/StickerButton';
+import StickerCard from './ui/StickerCard';
 
 interface ScanReceiptModalProps {
   visible: boolean;
@@ -175,7 +175,7 @@ export default function ScanReceiptModal({
 
   const processImage = async (base64: string, mimeType: string) => {
     setIsScanning(true);
-    setStatusText('Analyzing receipt with Gemini...');
+    setStatusText('Reading the items and prices...');
     try {
       let result: ScannedReceiptResult;
       if (isGeminiKeyConfigured()) {
@@ -194,6 +194,22 @@ export default function ScanReceiptModal({
           dateExpired: expIso,
         };
       });
+      // A scan that reads the photo but finds nothing used to drop the user
+      // back on the upload screen with no items and no explanation, which
+      // reads as the upload having failed. Say so, and give them a row to
+      // type into so the trip is not lost.
+      if (itemsWithDates.length === 0) {
+        Alert.alert(
+          'No items found',
+          'That photo did not look like a grocery receipt. Try a clearer photo of the itemised part, or add the items yourself.',
+          [
+            { text: 'Try another photo', style: 'cancel' },
+            { text: 'Add manually', onPress: handleAddNewItem },
+          ]
+        );
+        return;
+      }
+
       setScannedItems(itemsWithDates);
       const initialRaw: Record<number, string> = {};
       itemsWithDates.forEach((item, i) => {
@@ -201,25 +217,15 @@ export default function ScanReceiptModal({
       });
       setRawPrices(initialRaw);
     } catch (err: any) {
-      Alert.alert('Receipt Scan Notice', 'Gemini encountered a problem parsing the receipt. Loaded demo items to continue.');
-      const mock = await scanGroceryReceiptMock();
-      const tripIso = mock.tripDate ? mock.tripDate.slice(0, 10) : getLocalDateString();
-      setTripDate(tripIso);
-      const itemsWithDates = mock.items.map((it) => {
-        const shelfDays = it.shelfLifeDays && it.shelfLifeDays > 0 ? it.shelfLifeDays : 7;
-        const expIso = it.dateExpired || addDaysToLocalDate(tripIso, shelfDays);
-        return {
-          ...it,
-          shelfLifeDays: shelfDays,
-          dateExpired: expIso,
-        };
-      });
-      setScannedItems(itemsWithDates);
-      const initialRaw: Record<number, string> = {};
-      itemsWithDates.forEach((item, i) => {
-        initialRaw[i] = item.price > 0 ? item.price.toString() : '';
-      });
-      setRawPrices(initialRaw);
+      console.warn('Receipt scan failed:', err?.message);
+      Alert.alert(
+        "Couldn't read that receipt",
+        err?.message || 'Please try again, or add the items yourself.',
+        [
+          { text: 'Try another photo', style: 'cancel' },
+          { text: 'Add manually', onPress: handleAddNewItem },
+        ]
+      );
     } finally {
       setIsScanning(false);
       setStatusText('');
@@ -385,7 +391,7 @@ export default function ScanReceiptModal({
               <ActivityIndicator color={Colors.terracotta} size="large" style={{ marginTop: 20 }} />
               <Text style={styles.loadingHeading}>Reading your receipt</Text>
               <Text style={styles.loadingStatusText}>
-                {statusText || 'Extracting items and prices with Gemini AI...'}
+                {statusText || 'Reading the items and prices...'}
               </Text>
             </View>
           ) : scannedItems.length === 0 ? (
@@ -525,6 +531,7 @@ export default function ScanReceiptModal({
                           <Text style={styles.deleteBtnText}>✕</Text>
                         </Pressable>
                       </View>
+
                     </StickerCard>
                   );
                 })}

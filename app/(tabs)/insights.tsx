@@ -483,38 +483,26 @@ export default function ProfileYouScreen() {
           ) : statsError || !stats ? (
             <Text style={styles.wasteTrendText}>
               {statsError
-                ? `Could not load your stats: ${statsError}`
+                ? `Could not load your waste and spending right now: ${statsError}. Pull down to try again.`
                 : "No stats yet."}
             </Text>
           ) : (
             <>
               {/* Spent - Wasted - Rescued */}
               <View style={styles.kpiCardsRow}>
-                <StickerCard
-                  backgroundColor={Colors.paper}
-                  borderRadius={18}
-                  style={styles.kpiCard}
-                >
+                <StickerCard backgroundColor={Colors.paper} borderRadius={18} containerStyle={{ flex: 1 }} style={styles.kpiCard}>
                   <Text style={styles.kpiLabel}>Spent</Text>
                   <Text style={styles.kpiValue}>{money(stats.spent)}</Text>
                 </StickerCard>
 
-                <StickerCard
-                  backgroundColor={Colors.paper}
-                  borderRadius={18}
-                  style={styles.kpiCard}
-                >
+                <StickerCard backgroundColor={Colors.paper} borderRadius={18} containerStyle={{ flex: 1 }} style={styles.kpiCard}>
                   <Text style={styles.kpiLabel}>Wasted</Text>
                   <Text style={[styles.kpiValue, { color: Colors.terracotta }]}>
                     {money(stats.wasted)}
                   </Text>
                 </StickerCard>
 
-                <StickerCard
-                  backgroundColor={Colors.paper}
-                  borderRadius={18}
-                  style={styles.kpiCard}
-                >
+                <StickerCard backgroundColor={Colors.paper} borderRadius={18} containerStyle={{ flex: 1 }} style={styles.kpiCard}>
                   <Text style={styles.kpiLabel}>Rescued</Text>
                   <Text style={[styles.kpiValue, { color: Colors.fresh.text }]}>
                     {money(stats.rescued)}
@@ -946,7 +934,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   kpiCard: {
-    flex: 1,
     padding: 12,
     alignItems: "center",
   },

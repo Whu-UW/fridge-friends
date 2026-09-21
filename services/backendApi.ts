@@ -232,7 +232,10 @@ export function toFrontendProfile(user: BackendUser): ProfileRow {
   };
 }
 
-export function toFrontendFriend(backendFriend: BackendFriend): FriendEntry {
+export function toFrontendFriend(
+  backendFriend: BackendFriend,
+  currentUserId?: number
+): FriendEntry {
   const friendUser = backendFriend.friend;
   const friendId = friendUser?.id || backendFriend.friend_id;
   const friendName = friendUser?.name || 'Friend';
@@ -244,6 +247,11 @@ export function toFrontendFriend(backendFriend: BackendFriend): FriendEntry {
     avatar_url: getUserAvatar(friendId, friendName),
     created_at: friendUser?.created_at || backendFriend.created_at,
     status: backendFriend.status === 'accepted' ? 'accepted' : 'pending',
+    // The row is directional: whoever created it (user_id) is the requester.
+    direction:
+      currentUserId !== undefined && backendFriend.user_id === currentUserId
+        ? 'outgoing'
+        : 'incoming',
   };
 }
 
@@ -375,9 +383,10 @@ export function toFrontendRecipeFromBackend(
       id: `${recipeId}-task-2`,
       recipe_id: recipeId,
       step_number: 2,
-      instruction:
-        backendRecipe.rank_reason ||
-        `Assemble and cook ${backendRecipe.name} following chef recommendations.`,
+      // Not rank_reason: that says why this recipe was suggested, which is no
+      // use to someone stood at a stove — and it carries whatever text the
+      // suggester happened to write.
+      instruction: `Cook ${backendRecipe.name}: combine everything in a pan over medium heat and season to taste.`,
       assigned_to_id: 'host',
       assigned_to_name: 'Cooking Crew',
     },
@@ -525,6 +534,17 @@ const WEEKDAYS = [
  * datetime the backend accepts. Anything unrecognised returns null, so an odd
  * label leaves the feast undated instead of failing the whole request.
  */
+/** "Sat 21 Sep at 6:30 PM" from an ISO datetime; anything else passes through. */
+export function formatScheduledFor(value?: string | null): string {
+  if (!value) return '';
+  if (!/^\d{4}-\d{2}-\d{2}/.test(value)) return value;
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return value;
+  const day = d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return `${day} at ${time}`;
+}
+
 export function toBackendScheduledFor(label?: string): string | null {
   if (!label) return null;
 
@@ -615,6 +635,8 @@ export function toBackendFeastCreate(
  * HTTP Client
  * ============================================================================ */
 
+const GENERIC_ERROR = 'Something went wrong. Please try again.';
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${BACKEND_BASE_URL}${path}`;
   const headers = {
@@ -637,18 +659,22 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
     if (!res.ok) {
       const text = await res.text();
-      let errorMsg = `HTTP ${res.status}: ${res.statusText}`;
+
+      // Only a plain `detail` string is written for a person to read ("That
+      // User ID is taken"). Everything else here — status lines, validation
+      // dumps, HTML error pages — describes our plumbing, so it is logged and
+      // a neutral message is thrown in its place.
+      let errorMsg = GENERIC_ERROR;
       try {
         const jsonErr = JSON.parse(text);
-        if (jsonErr.detail) {
-          errorMsg =
-            typeof jsonErr.detail === 'string'
-              ? jsonErr.detail
-              : JSON.stringify(jsonErr.detail);
+        if (typeof jsonErr.detail === 'string' && jsonErr.detail.trim()) {
+          errorMsg = jsonErr.detail;
         }
       } catch {
-        if (text) errorMsg = text.slice(0, 200);
+        // Not JSON; nothing safe to show
       }
+
+      console.warn(`Request failed: ${res.status} ${path} — ${text.slice(0, 200)}`);
       throw new Error(errorMsg);
     }
 
@@ -660,9 +686,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   } catch (err: any) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
-      throw new Error(`Request timed out to ${url}`);
+      console.warn(`Request timed out: ${url}`);
+      throw new Error('That took too long. Please check your connection and try again.');
     }
-    throw err;
+    // A fetch failure carries the host and port in its message; keep that in
+    // the log and hand the caller something showable.
+    console.warn(`Request error: ${url} — ${err?.message}`);
+    throw new Error(GENERIC_ERROR);
   }
 }
 
@@ -867,6 +897,16 @@ export const backendApi = {
   },
 
   /**
+   * Invite someone by username
+   */
+  async inviteFriend(userId: number, username: string): Promise<BackendFriend> {
+    return request<BackendFriend>(`/users/${userId}/friends/invite`, {
+      method: 'POST',
+      body: JSON.stringify({ username }),
+    });
+  },
+
+  /**
    * Update friendship status (accept or block)
    */
   async updateFriendship(
@@ -938,6 +978,42 @@ export const backendApi = {
   },
 
   /**
+   * Update a feast (e.g. change scheduled time). Gracefully returns null
+   * if the backend does not support PATCH yet.
+   */
+  async updateFeast(
+    feastId: number,
+    data: { scheduled_for?: string | null }
+  ): Promise<BackendFeastRead | null> {
+    try {
+      return await request<BackendFeastRead>(`/feasts/${feastId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      });
+    } catch (err) {
+      console.warn('updateFeast not supported by backend yet:', err);
+      return null;
+    }
+  },
+
+  /**
+   * Register an Expo push token for a user so the backend can send
+   * push notifications. Returns true on success.
+   */
+  async registerPushToken(userId: number, token: string): Promise<boolean> {
+    try {
+      await request(`/users/${userId}/push-token`, {
+        method: 'POST',
+        body: JSON.stringify({ expo_push_token: token }),
+      });
+      return true;
+    } catch (err) {
+      console.warn('Could not register push token:', err);
+      return false;
+    }
+  },
+
+  /**
    * Take an item off the shelf as eaten (`used`) or binned (`wasted`).
    * This is what the waste-and-spending screen counts, so items are resolved
    * rather than deleted.
@@ -950,6 +1026,12 @@ export const backendApi = {
     return request<BackendGroceryItem>(`/grocery-items/${itemId}/resolve`, {
       method: 'POST',
       body: JSON.stringify({ outcome, resolved_on: resolvedOn ?? null }),
+    });
+  },
+
+  async markNotificationRead(notificationId: number): Promise<BackendNotificationRead> {
+    return request<BackendNotificationRead>(`/notifications/${notificationId}/read`, {
+      method: 'POST',
     });
   },
 

@@ -1,25 +1,25 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  Pressable,
-  StyleSheet,
-  ActivityIndicator,
-} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp } from '../context/AppContext';
-import { Colors, Fonts } from '../constants/Theme';
-import StickerCard from '../components/ui/StickerCard';
-import StickerButton from '../components/ui/StickerButton';
-import StatusChip from '../components/ui/StatusChip';
-import FoodCharacter from '../components/FoodCharacter';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  lookupFoodCharacter,
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import FoodCharacter from '../components/FoodCharacter';
+import StatusChip from '../components/ui/StatusChip';
+import StickerButton from '../components/ui/StickerButton';
+import StickerCard from '../components/ui/StickerCard';
+import { Colors, Fonts } from '../constants/Theme';
+import { useApp } from '../context/AppContext';
+import {
+  formatShelfTimeLeft,
   getDaysLeft,
   getStatusUrgency,
-  formatShelfTimeLeft,
+  lookupFoodCharacter,
 } from '../services/foodCharacterLookup';
 import { RecipeComposite } from '../services/supabase/types';
 
@@ -240,9 +240,6 @@ export default function RescueScreen() {
               ) : (
                 <View style={styles.recipeCardsStack}>
                   {soloRecipes.map((recipe, index) => {
-                    const dollarsSaved = Math.round(
-                      recipe.projectedImpact?.dollarsSaved || 9
-                    );
                     const isExpanded = expandedRecipeIds.includes(recipe.id);
                     const isSaved = savedRecipes.some((r) => r.id === recipe.id);
 
@@ -276,7 +273,7 @@ export default function RescueScreen() {
                           </View>
                           <View style={[styles.metaPill, styles.savingsPill]}>
                             <Text style={[styles.metaPillText, styles.savingsPillText]}>
-                              Saves about ${dollarsSaved}
+                              Saves about ${Math.round(recipe.projectedImpact?.dollarsSaved || 11)}
                             </Text>
                           </View>
                         </View>

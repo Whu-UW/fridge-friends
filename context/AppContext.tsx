@@ -1,38 +1,41 @@
-import React, { createContext, useContext, useState, useMemo, useEffect, useRef, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { buddyKeyFromBackend } from '../services/foodCharacterLookup';
-import {
-  ProfileRow,
-  FridgeItemRow,
-  ShoppingTripRow,
-  RecipeComposite,
-  CircleComposite,
-} from '../services/supabase/types';
-import {
-  estimateShelfLife,
-  generateSoloWasteRecipe as llmGenerateSoloRecipe,
-  generateCircleMealRecipe as llmGenerateCircleMealRecipe,
-  generateDinnerPartyRecipe,
-  generateTopSoloRecipes as llmGenerateTopSoloRecipes,
-  generateTopDinnerPartyRecipes as llmGenerateTopDinnerPartyRecipes,
-} from '../services/llmService';
-import { ScannedReceiptResult } from '../services/receiptOcrService';
+import React, { createContext, useContext, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert } from 'react-native';
 import {
   backendApi,
-  toFrontendFridgeItem,
-  toBackendGroceryItemCreate,
-  toFrontendProfile,
-  toFrontendFriend,
-  toFrontendFeast,
-  toBackendFeastCreate,
-  BackendUser,
   BackendBuddy,
-  BackendFeastRead,
+  BackendUser,
   ConnectionDiagnosticResult,
+  toBackendFeastCreate,
+  toBackendGroceryItemCreate,
+  toFrontendFeast,
+  toFrontendFridgeItem,
+  toFrontendFriend,
+  toFrontendProfile
 } from '../services/backendApi';
+import { buddyKeyFromBackend } from '../services/foodCharacterLookup';
+import {
+  estimateShelfLife,
+  generateDinnerPartyRecipe,
+  generateCircleMealRecipe as llmGenerateCircleMealRecipe,
+  generateSoloWasteRecipe as llmGenerateSoloRecipe,
+  generateTopDinnerPartyRecipes as llmGenerateTopDinnerPartyRecipes,
+  generateTopSoloRecipes as llmGenerateTopSoloRecipes,
+} from '../services/llmService';
+import { registerForPushNotifications } from '../services/notificationService';
+import { ScannedReceiptResult } from '../services/receiptOcrService';
+import {
+  CircleComposite,
+  FridgeItemRow,
+  ProfileRow,
+  RecipeComposite,
+  ShoppingTripRow,
+} from '../services/supabase/types';
 
 export interface FriendEntry extends ProfileRow {
   status: 'accepted' | 'pending';
+  /** For pending rows: did I send the request, or did they? */
+  direction?: 'incoming' | 'outgoing';
 }
 
 export interface FeastFriendStatus {
@@ -133,8 +136,12 @@ interface AppContextType {
   completeFeast: (feastId: string, outcome: 'rescued' | 'failed') => void;
   respondToFeastInvite: (feastId: string, response: 'accepted' | 'declined') => void;
   nudgeFeastFriend: (feastId: string, friendId: string) => void;
+  updateFeastSchedule: (feastId: string, newScheduledFor: string) => void;
+  refreshFeast: (feastId: string) => Promise<void>;
+  unreadNotificationCount: number;
   toggleFollowFriend: (friendId: string) => void;
-  addFriend: (username: string, displayName?: string) => void;
+  addFriend: (username: string) => Promise<void>;
+  refreshFriends: () => Promise<void>;
   acceptFriendRequest: (friendId: string) => void;
   removeFriend: (friendId: string) => void;
   createDinnerPartyRecipe: (
@@ -761,6 +768,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [currentUser, setCurrentUser] = useState<ProfileRow>(initialCurrentUser);
   const [friends, setFriends] = useState<FriendEntry[]>([]);
   const [feasts, setFeasts] = useState<FeastInvite[]>([]);
+  const announcedNotificationsRef = useRef<Set<number>>(new Set());
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [followingFriendIds, setFollowingFriendIds] = useState<string[]>([]);
   const [circles, setCircles] = useState<CircleComposite[]>([]);
   const [fridgeItems, setFridgeItems] = useState<FridgeItemRow[]>([]);
@@ -860,7 +869,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const backendFriends = await backendApi.getFriends(effectiveUserId);
       let mappedFriends: FriendEntry[] = [];
       if (backendFriends && backendFriends.length > 0) {
-        mappedFriends = backendFriends.map(toFrontendFriend);
+        mappedFriends = backendFriends.map((bf) => toFrontendFriend(bf, effectiveUserId));
         setFriends(mappedFriends);
         setFollowingFriendIds(
           mappedFriends.filter((f) => f.status === 'accepted').map((f) => f.id)
@@ -938,6 +947,61 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const AUTH_USER_KEY = 'auth_user_id';
+
+  // Invitations arrive while the app is open: poll feasts and the inbox, and
+  // tell the person about each new invitation once.
+  useEffect(() => {
+    if (!backendConnected || !activeBackendUserId) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const [backendFeasts, inbox] = await Promise.all([
+          backendApi.getFeasts(activeBackendUserId),
+          backendApi.getNotifications(activeBackendUserId, { unreadOnly: true }),
+        ]);
+        if (cancelled) return;
+        setFeasts((prev) => {
+          const live = backendFeasts.map((bf) =>
+            applyFeastOverlay(toFrontendFeast(bf, activeBackendUserId), feastOverlaysRef.current)
+          );
+          // Keep feasts not yet saved to the backend
+          const local = prev.filter((f) => isNaN(Number(f.id)));
+          return [...local, ...live];
+        });
+        // Track how many unread notifications exist for badge display
+        setUnreadNotificationCount(inbox.length);
+        for (const n of inbox) {
+          if (announcedNotificationsRef.current.has(n.id)) continue;
+          announcedNotificationsRef.current.add(n.id);
+          Alert.alert(n.title, n.body);
+        }
+      } catch (err) {
+        console.warn('Invitation check failed:', err);
+      }
+    };
+    poll();
+    const timer = setInterval(poll, 20000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [backendConnected, activeBackendUserId]);
+
+  // Register push notifications when connected to backend
+  useEffect(() => {
+    if (!backendConnected || !activeBackendUserId) return;
+    const registerPush = async () => {
+      try {
+        const token = await registerForPushNotifications();
+        if (token) {
+          await backendApi.registerPushToken(activeBackendUserId, token);
+        }
+      } catch (err) {
+        console.warn('Could not register push token:', err);
+      }
+    };
+    registerPush();
+  }, [backendConnected, activeBackendUserId]);
 
   // Restore device-only state (saved recipes, feast cooking/outcome)
   useEffect(() => {
@@ -1099,23 +1163,35 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setShoppingTrips((prev) => [newTrip, ...prev]);
     setFridgeItems((prev) => [...newItems, ...prev]);
 
-    // Backend sync: persist items to backend with complete expiration and category info
+    // Backend sync. Two things matter here beyond saving the row:
+    //
+    //  * the writes go out together. One request per item, awaited in turn,
+    //    left the user watching a spinner for as long as the receipt was long.
+    //  * the local row is swapped for the saved one. Until that happens the
+    //    item's id is a local `item-...` string, and every backend call keyed
+    //    on the id quietly skips it — which is why tossing a scanned item
+    //    never reached the waste figures.
     if (backendConnected && activeBackendUserId) {
-      for (const item of newItems) {
-        try {
-          const payload = toBackendGroceryItemCreate(
-            item.name,
-            item.category,
-            item.expires_at,
-            item.date_bought,
-            item.quantity,
-            item.price
-          );
-          await backendApi.createGroceryItem(activeBackendUserId, payload);
-        } catch (err) {
-          console.warn('Error syncing receipt item to backend:', err);
-        }
-      }
+      await Promise.all(
+        newItems.map(async (item) => {
+          try {
+            const payload = toBackendGroceryItemCreate(
+              item.name,
+              item.category,
+              item.expires_at,
+              item.date_bought,
+              item.quantity,
+              item.price
+            );
+            const created = await backendApi.createGroceryItem(activeBackendUserId, payload);
+            setFridgeItems((prev) =>
+              prev.map((it) => (it.id === item.id ? toFrontendFridgeItem(created) : it))
+            );
+          } catch (err) {
+            console.warn('Error syncing receipt item to backend:', err);
+          }
+        })
+      );
     }
   };
 
@@ -1432,66 +1508,86 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
   };
 
+  /**
+   * Host updates the feast's scheduled date/time. Updates local state
+   * immediately, then attempts to sync with the backend.
+   */
+  const updateFeastSchedule = (feastId: string, newScheduledFor: string) => {
+    setFeasts((prev) =>
+      prev.map((f) => (f.id === feastId ? { ...f, scheduledFor: newScheduledFor } : f))
+    );
+
+    const numericFeastId = Number(feastId);
+    if (isNaN(numericFeastId) || !backendConnected) return;
+
+    backendApi
+      .updateFeast(numericFeastId, { scheduled_for: newScheduledFor })
+      .catch((err) => {
+        console.warn('Could not update feast schedule:', err);
+      });
+  };
+
+  /**
+   * Re-fetch a single feast from the backend, used for RSVP polling
+   * in the waiting lobby so the host sees real-time status changes.
+   */
+  const refreshFeast = async (feastId: string) => {
+    const numericFeastId = Number(feastId);
+    if (isNaN(numericFeastId) || !backendConnected || !activeBackendUserId) return;
+
+    try {
+      const updated = await backendApi.getFeast(numericFeastId);
+      setFeasts((prev) =>
+        prev.map((f) =>
+          f.id === feastId
+            ? applyFeastOverlay(
+                toFrontendFeast(updated, activeBackendUserId),
+                feastOverlaysRef.current
+              )
+            : f
+        )
+      );
+    } catch (err) {
+      console.warn('Could not refresh feast:', err);
+    }
+  };
+
+  /**
+   * Mark a backend notification as read (e.g. when user responds to a feast invite).
+   */
+  const markNotificationRead = (notificationId: number) => {
+    backendApi.markNotificationRead(notificationId).catch(() => {});
+    setUnreadNotificationCount((prev) => Math.max(0, prev - 1));
+  };
+
   const toggleFollowFriend = (friendId: string) => {
     setFollowingFriendIds((prev) =>
       prev.includes(friendId) ? prev.filter((id) => id !== friendId) : [...prev, friendId]
     );
   };
 
-  const addFriend = (usernameOrId: string, displayName?: string) => {
-    const numericTargetId = Number(usernameOrId);
-    if (!isNaN(numericTargetId) && backendConnected) {
-      backendApi
-        .addFriend(activeBackendUserId, numericTargetId)
-        .then((added) => {
-          const mapped = toFrontendFriend(added);
-          setFriends((prev) => [...prev.filter((f) => f.id !== mapped.id), mapped]);
-        })
-        .catch((err) => {
-          console.warn('Error adding friend on backend:', err);
-        });
-      return;
+  const refreshFriends = async () => {
+    if (!backendConnected || !activeBackendUserId) return;
+    try {
+      const rows = await backendApi.getFriends(activeBackendUserId);
+      const mapped = rows.map((bf) => toFrontendFriend(bf, activeBackendUserId));
+      setFriends(mapped);
+      setFollowingFriendIds(mapped.filter((f) => f.status === 'accepted').map((f) => f.id));
+    } catch (err) {
+      console.warn('Could not refresh friends:', err);
     }
+  };
 
-    const cleanUsername = usernameOrId.trim().toLowerCase().replace('@', '');
-    if (!cleanUsername) return;
-
-    // Check if matching backend user exists
-    const matchingBackendUser = availableBackendUsers.find(
-      (u) =>
-        (u.username || '').toLowerCase().includes(cleanUsername) ||
-        (u.email || '').toLowerCase().includes(cleanUsername) ||
-        (u.name || '').toLowerCase().includes(cleanUsername)
-    );
-    if (matchingBackendUser && backendConnected) {
-      backendApi
-        .addFriend(activeBackendUserId, matchingBackendUser.id)
-        .then((added) => {
-          const mapped = toFrontendFriend(added);
-          setFriends((prev) => [...prev.filter((f) => f.id !== mapped.id), mapped]);
-        })
-        .catch((err) => {
-          console.warn('Backend add friend fallback:', err);
-        });
-      return;
+  /** Throws with a message fit to show the user if the invite cannot be sent. */
+  const addFriend = async (username: string) => {
+    const clean = username.trim().replace(/^@/, '').toLowerCase();
+    if (!clean) throw new Error('Please enter a username.');
+    if (!backendConnected || !activeBackendUserId) {
+      throw new Error('Please log in to invite friends.');
     }
-
-    const newFriendId = `friend-${Date.now()}`;
-    const newFriend: FriendEntry = {
-      id: newFriendId,
-      email: `${cleanUsername}@example.com`,
-      username: cleanUsername,
-      display_name:
-        displayName && displayName.trim()
-          ? displayName.trim()
-          : cleanUsername.charAt(0).toUpperCase() + cleanUsername.slice(1),
-      avatar_url:
-        'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100',
-      created_at: new Date().toISOString(),
-      status: 'pending',
-    };
-    setFriends((prev) => [...prev, newFriend]);
-    setFollowingFriendIds((prev) => [...prev, newFriendId]);
+    const added = await backendApi.inviteFriend(activeBackendUserId, clean);
+    const mapped = toFrontendFriend(added, activeBackendUserId);
+    setFriends((prev) => [...prev.filter((f) => f.id !== mapped.id), mapped]);
   };
 
   const acceptFriendRequest = (friendId: string) => {
@@ -1975,8 +2071,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       completeFeast,
       respondToFeastInvite,
       nudgeFeastFriend,
+      updateFeastSchedule,
+      refreshFeast,
+      unreadNotificationCount,
       toggleFollowFriend,
       addFriend,
+      refreshFriends,
       acceptFriendRequest,
       removeFriend,
       createDinnerPartyRecipe,
@@ -2022,6 +2122,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       isRecipesHardcoded,
       isLoggedIn,
       feastOverlays,
+      unreadNotificationCount,
     ]
   );
 

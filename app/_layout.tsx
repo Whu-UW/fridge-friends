@@ -15,6 +15,10 @@ import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppProvider } from '../context/AppContext';
+import { setupForegroundHandler, addNotificationResponseListener } from '../services/notificationService';
+
+// Must be called outside component for SDK 57 foreground notification display
+setupForegroundHandler();
 
 export {
   ErrorBoundary,
@@ -59,6 +63,7 @@ function RootNavigation() {
 }
 
 export default function RootLayout() {
+  const router = useRouter();
   const [loaded, error] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
     Fredoka_500Medium,
@@ -78,6 +83,19 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [loaded]);
+
+  // Navigate to Meals tab when user taps a feast notification
+  useEffect(() => {
+    const subscription = addNotificationResponseListener((response) => {
+      const data = response.notification.request.content.data;
+      if (data?.url) {
+        router.push(data.url as any);
+      } else {
+        router.push('/(tabs)/meals' as any);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
 
   if (!loaded) {
     return null;
