@@ -15,6 +15,13 @@ import StickerCard from './ui/StickerCard';
 import StickerButton from './ui/StickerButton';
 import CalendarPickerModal from './CalendarPickerModal';
 import { lookupFoodCharacter } from '../services/foodCharacterLookup';
+import { CalendarIcon } from './ui/AppIcons';
+import {
+  getLocalDateString,
+  formatDisplayDate,
+  toMiddayIso,
+  diffCalendarDays,
+} from '../utils/dateUtils';
 
 interface AddGroceryModalProps {
   visible: boolean;
@@ -36,7 +43,7 @@ export default function AddGroceryModal({
 }: AddGroceryModalProps) {
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
-  const [dateBought, setDateBought] = useState(new Date().toISOString().slice(0, 10));
+  const [dateBought, setDateBought] = useState(getLocalDateString());
   const [dateExpired, setDateExpired] = useState('');
   const [calendarTarget, setCalendarTarget] = useState<'bought' | 'expired'>('bought');
   const [isCalendarVisible, setIsCalendarVisible] = useState(false);
@@ -46,21 +53,11 @@ export default function AddGroceryModal({
     if (visible) {
       setName('');
       setPrice('');
-      setDateBought(new Date().toISOString().slice(0, 10));
+      setDateBought(getLocalDateString());
       setDateExpired('');
       setCalendarTarget('bought');
     }
   }, [visible]);
-
-  // Format date display (MM/DD/YYYY)
-  const formatDisplayDate = (isoDate: string) => {
-    try {
-      const [y, m, d] = isoDate.split('-');
-      return `${m}/${d}/${y}`;
-    } catch {
-      return isoDate;
-    }
-  };
 
   const handleAddSubmit = async () => {
     const trimmed = name.trim();
@@ -85,27 +82,26 @@ export default function AddGroceryModal({
       return;
     }
 
-    const boughtMs = new Date(dateBought).getTime();
-    const expMs = new Date(dateExpired).getTime();
-    if (expMs < boughtMs) {
+    const daysDiff = diffCalendarDays(dateBought, dateExpired);
+    if (daysDiff < 0) {
       Alert.alert('Invalid Date', 'Expiration date cannot be earlier than date bought.');
       return;
     }
 
     const lookup = lookupFoodCharacter(trimmed);
-    const diffDays = Math.max(1, Math.round((expMs - boughtMs) / 864e5));
+    const shelfLife = Math.max(1, daysDiff);
 
     setIsSubmitting(true);
     try {
-      const fullIsoBoughtDate = new Date(dateBought).toISOString();
-      const fullIsoExpiresDate = new Date(dateExpired).toISOString();
+      const fullIsoBoughtDate = toMiddayIso(dateBought);
+      const fullIsoExpiresDate = toMiddayIso(dateExpired);
 
       await onAdd(
         trimmed,
         parsedPrice,
         fullIsoBoughtDate,
         lookup.category,
-        diffDays,
+        shelfLife,
         fullIsoExpiresDate
       );
       onClose();
@@ -174,7 +170,7 @@ export default function AddGroceryModal({
                   }}
                 >
                   <Text style={styles.dateText}>{formatDisplayDate(dateBought)}</Text>
-                  <Text style={styles.calendarIcon}>📅</Text>
+                  <CalendarIcon size={18} color={Colors.ink} />
                 </Pressable>
               </View>
 
@@ -190,7 +186,7 @@ export default function AddGroceryModal({
                   <Text style={[styles.dateText, !dateExpired && styles.placeholderText]}>
                     {dateExpired ? formatDisplayDate(dateExpired) : 'Select date'}
                   </Text>
-                  <Text style={styles.calendarIcon}>📅</Text>
+                  <CalendarIcon size={18} color={Colors.ink} />
                 </Pressable>
               </View>
             </View>

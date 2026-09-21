@@ -1,7 +1,13 @@
 import { Tabs } from "expo-router";
-import { Platform, Text } from "react-native";
+import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors, Fonts } from "../../constants/Theme";
+import {
+  FridgeIcon,
+  MealsIcon,
+  FriendsIcon,
+  YouIcon,
+} from "../../components/ui/AppIcons";
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
@@ -38,9 +44,7 @@ export default function TabLayout() {
         options={{
           title: "Fridge",
           tabBarLabel: "Fridge",
-          tabBarIcon: ({ color, focused }) => (
-            <Text style={{ fontSize: 20, color }}>{focused ? "🏠" : "🛖"}</Text>
-          ),
+          tabBarIcon: ({ color }) => <FridgeIcon size={22} color={color} />,
         }}
       />
 
@@ -50,9 +54,7 @@ export default function TabLayout() {
         options={{
           title: "Meals",
           tabBarLabel: "Meals",
-          tabBarIcon: ({ color, focused }) => (
-            <Text style={{ fontSize: 20, color }}>{focused ? "🍳" : "🍽️"}</Text>
-          ),
+          tabBarIcon: ({ color }) => <MealsIcon size={22} color={color} />,
         }}
       />
 
@@ -62,9 +64,7 @@ export default function TabLayout() {
         options={{
           title: "Friends",
           tabBarLabel: "Friends",
-          tabBarIcon: ({ color, focused }) => (
-            <Text style={{ fontSize: 20, color }}>{focused ? "👥" : "👤"}</Text>
-          ),
+          tabBarIcon: ({ color }) => <FriendsIcon size={22} color={color} />,
         }}
       />
 
@@ -74,9 +74,7 @@ export default function TabLayout() {
         options={{
           title: "You",
           tabBarLabel: "You",
-          tabBarIcon: ({ color, focused }) => (
-            <Text style={{ fontSize: 20, color }}>{focused ? "🧑‍🍳" : "📊"}</Text>
-          ),
+          tabBarIcon: ({ color }) => <YouIcon size={22} color={color} />,
         }}
       />
 
