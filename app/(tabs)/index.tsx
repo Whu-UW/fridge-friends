@@ -149,6 +149,7 @@ export default function ShelfScreen() {
   // Multi-select state
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [isSelectMode, setIsSelectMode] = useState<boolean>(false);
+  const [bottomBarHeight, setBottomBarHeight] = useState(160);
 
   const toggleItemSelection = (id: string) => {
     if (isViewingFriend) return;
@@ -333,7 +334,6 @@ export default function ShelfScreen() {
   // Measured rather than guessed: the bar grows with the safe-area inset and
   // with its own button labels, and a short guess left the last shelf row
   // sitting underneath it.
-  const [bottomBarHeight, setBottomBarHeight] = useState(160);
   const safeBottomPadding =
     selectedItemIds.length > 0
       ? bottomBarHeight + 24
