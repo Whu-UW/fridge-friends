@@ -61,15 +61,19 @@ export interface FeastInvite {
   foodRescuedGrams: number;
   dollarsSaved: number;
   invitedFriends: FeastFriendStatus[];
-  status: 'voting' | 'confirmed' | 'cooking' | 'completed' | 'cancelled' | 'pending';
+  status: 'voting' | 'pending' | 'confirmed' | 'cooking' | 'completed' | 'cancelled';
+  /** The signed-in user's own RSVP for this feast */
+  userRsvpStatus?: 'host' | 'pending' | 'accepted' | 'declined';
+  /** Who is bringing what, derived from the recipe's ingredients */
+  bringBreakdown?: { who: string; items: string; avatarUrl?: string }[];
+  /** Numbered steps shown while the feast is cooking */
+  cookingTasks?: { step_number?: number; instruction: string; assignedTo?: string }[];
+  /** How the feast ended. Local only: the backend has no feast outcome yet. */
+  outcome?: 'rescued' | 'failed';
   createdAt: string;
   scheduledFor?: string;
   invitationsSent?: number;
   invitationsPending?: number;
-  userRsvpStatus?: 'host' | 'pending' | 'accepted' | 'declined';
-  bringBreakdown?: Array<{ who: string; items: string; avatarUrl?: string }>;
-  cookingTasks?: Array<{ step_number?: number; instruction: string; assignedTo?: string }>;
-  outcome?: 'rescued' | 'failed';
 }
 
 interface AppContextType {
@@ -81,7 +85,6 @@ interface AppContextType {
   fridgeItems: FridgeItemRow[];
   shoppingTrips: ShoppingTripRow[];
   recipes: RecipeComposite[];
-  savedRecipes: RecipeComposite[];
   // Backend State & Data Source Tracking
   backendConnected: boolean;
   isSyncing: boolean;
@@ -120,6 +123,16 @@ interface AppContextType {
   ) => Promise<void>;
   removeFridgeItem: (id: string) => void;
   tossFridgeItem: (id: string) => void;
+  recordRescuedMeal: (foodNames: string[], dollarsSaved: number, mealTitle: string) => void;
+  recordWastedMeal: (foodNames: string[], dollarsWasted: number, mealTitle: string) => void;
+  savedRecipes: RecipeComposite[];
+  saveRecipe: (recipe: RecipeComposite) => void;
+  removeSavedRecipe: (recipeId: string) => void;
+  addCustomFeast: (feast: FeastInvite) => void;
+  startFeastCooking: (feastId: string) => void;
+  completeFeast: (feastId: string, outcome: 'rescued' | 'failed') => void;
+  respondToFeastInvite: (feastId: string, response: 'accepted' | 'declined') => void;
+  nudgeFeastFriend: (feastId: string, friendId: string) => void;
   toggleFollowFriend: (friendId: string) => void;
   addFriend: (username: string, displayName?: string) => void;
   acceptFriendRequest: (friendId: string) => void;
@@ -135,7 +148,7 @@ interface AppContextType {
   getCircleExpiringItems: (circleId: string, hoursThreshold?: number) => FridgeItemRow[];
   generateSoloWasteRecipe: () => Promise<string>;
   generateCircleMealRecipe: (circleId: string) => Promise<string>;
-  generateTopSoloRecipes: (itemsOverride?: FridgeItemRow[]) => Promise<RecipeComposite[]>;
+  generateTopSoloRecipes: (items?: FridgeItemRow[]) => Promise<RecipeComposite[]>;
   generateTopDinnerPartyRecipes: (
     partyName: string,
     invitedFriendIds: string[]
@@ -146,15 +159,6 @@ interface AppContextType {
     invitedFriendIds: string[],
     scheduledForIso?: string
   ) => FeastInvite;
-  addCustomFeast: (feast: FeastInvite) => void;
-  startFeastCooking: (feastId: string) => void;
-  completeFeast: (feastId: string, outcome: 'rescued' | 'failed') => void;
-  respondToFeastInvite: (feastId: string, response: 'accepted' | 'declined') => void;
-  nudgeFeastFriend: (feastId: string, friendId: string) => void;
-  recordRescuedMeal: (arg1?: any, arg2?: any, arg3?: any) => void;
-  recordWastedMeal: (arg1?: any, arg2?: any, arg3?: any) => void;
-  saveRecipe: (recipe: RecipeComposite) => void;
-  removeSavedRecipe: (recipeId: string) => void;
   voteOnFeastRecipe: (feastId: string, recipeId: string, userId: string) => void;
   simulateFriendVote: (feastId: string, friendId: string, recipeId: string) => void;
   confirmFeastRecipe: (feastId: string, recipeId: string) => void;
@@ -733,6 +737,23 @@ function buildLiveFeastFromDb(
   };
 }
 
+/** Feast state the backend cannot store yet (cooking / outcome). */
+interface FeastOverlay {
+  status?: FeastInvite['status'];
+  outcome?: FeastInvite['outcome'];
+}
+
+const FEAST_OVERLAY_KEY = 'feast_local_state';
+const SAVED_RECIPES_KEY = 'saved_recipes';
+
+function applyFeastOverlay(
+  feast: FeastInvite,
+  overlays: Record<string, FeastOverlay>
+): FeastInvite {
+  const overlay = overlays[feast.id];
+  return overlay ? { ...feast, ...overlay } : feast;
+}
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -745,36 +766,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [fridgeItems, setFridgeItems] = useState<FridgeItemRow[]>([]);
   const [shoppingTrips, setShoppingTrips] = useState<ShoppingTripRow[]>([]);
   const [recipes, setRecipes] = useState<RecipeComposite[]>([]);
-  const [savedRecipes, setSavedRecipes] = useState<RecipeComposite[]>([]);
-
-  useEffect(() => {
-    AsyncStorage.getItem('@saved_recipes')
-      .then((data) => {
-        if (data) {
-          try {
-            setSavedRecipes(JSON.parse(data));
-          } catch {}
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  const saveRecipe = (recipe: RecipeComposite) => {
-    setSavedRecipes((prev) => {
-      if (prev.some((r) => r.id === recipe.id)) return prev;
-      const next = [recipe, ...prev];
-      AsyncStorage.setItem('@saved_recipes', JSON.stringify(next)).catch(() => {});
-      return next;
-    });
-  };
-
-  const removeSavedRecipe = (recipeId: string) => {
-    setSavedRecipes((prev) => {
-      const next = prev.filter((r) => r.id !== recipeId);
-      AsyncStorage.setItem('@saved_recipes', JSON.stringify(next)).catch(() => {});
-      return next;
-    });
-  };
 
   // Backend Live State
   const [backendConnected, setBackendConnected] = useState<boolean>(false);
@@ -787,6 +778,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Auth State (persisted user id from the FastAPI backend)
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+
+  // Saved recipes and local-only feast state. The backend stores neither, so
+  // both live on the device and are keyed by the signed-in user.
+  const [savedRecipes, setSavedRecipes] = useState<RecipeComposite[]>([]);
+  const [feastOverlays, setFeastOverlays] = useState<Record<string, FeastOverlay>>({});
+  const feastOverlaysRef = useRef<Record<string, FeastOverlay>>({});
 
 
   // Computed Data Source Flags
@@ -895,7 +892,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       try {
         const backendFeasts = await backendApi.getFeasts(effectiveUserId);
         if (backendFeasts && backendFeasts.length > 0) {
-          liveFeasts = backendFeasts.map(toFrontendFeast);
+          liveFeasts = backendFeasts.map((bf) =>
+            applyFeastOverlay(
+              toFrontendFeast(bf, effectiveUserId),
+              feastOverlaysRef.current
+            )
+          );
         }
       } catch (feastsErr) {
         console.warn('Could not fetch feasts from backend database:', feastsErr);
@@ -936,6 +938,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const AUTH_USER_KEY = 'auth_user_id';
+
+  // Restore device-only state (saved recipes, feast cooking/outcome)
+  useEffect(() => {
+    AsyncStorage.multiGet([`${SAVED_RECIPES_KEY}_${currentUser.id}`, FEAST_OVERLAY_KEY])
+      .then(([[, saved], [, overlays]]) => {
+        if (saved) {
+          try {
+            setSavedRecipes(JSON.parse(saved));
+          } catch {}
+        }
+        if (overlays) {
+          try {
+            const parsed = JSON.parse(overlays);
+            feastOverlaysRef.current = parsed;
+            setFeastOverlays(parsed);
+            setFeasts((prev) => prev.map((f) => applyFeastOverlay(f, parsed)));
+          } catch {}
+        }
+      })
+      .catch(() => {});
+  }, [currentUser.id]);
 
   /**
    * Bind a freshly authenticated backend user and load their data.
@@ -981,10 +1004,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const updated = await backendApi.updateUser(activeBackendUserId, {
       username: newUsername.trim(),
     });
-    setCurrentUser((prev) => ({
-      ...prev,
-      username: updated.username || prev.username,
-    }));
+    setCurrentUser((prev) => ({ ...prev, username: updated.username || prev.username }));
   };
 
   const logout = async () => {
@@ -1088,7 +1108,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             item.category,
             item.expires_at,
             item.date_bought,
-            item.quantity
+            item.quantity,
+            item.price
           );
           await backendApi.createGroceryItem(activeBackendUserId, payload);
         } catch (err) {
@@ -1154,7 +1175,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           category,
           expiresAt,
           dateBoughtIso,
-          '1 item'
+          '1 item',
+          price
         );
         const created = await backendApi.createGroceryItem(activeBackendUserId, payload);
         // Replace temp item ID with backend ID
@@ -1177,8 +1199,237 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  /* ------------------------------------------------------------------
+   * Item outcomes
+   * An item is resolved, never just deleted: the waste-and-spending screen
+   * counts what was eaten against what was binned, and a deleted row cannot
+   * be counted. POST /grocery-items/{id}/resolve
+   * ------------------------------------------------------------------ */
+
+  const resolveItemsOnBackend = (ids: string[], outcome: 'used' | 'wasted') => {
+    if (!backendConnected) return;
+    ids.forEach((id) => {
+      const numericId = Number(id);
+      if (isNaN(numericId)) return;
+      backendApi.resolveGroceryItem(numericId, outcome).catch((err) => {
+        console.warn(`Could not mark item ${id} as ${outcome}:`, err);
+      });
+    });
+  };
+
+  /** Binned from the shelf: its price counts as waste. */
   const tossFridgeItem = (id: string) => {
-    removeFridgeItem(id);
+    setFridgeItems((prev) => prev.filter((item) => item.id !== id));
+    resolveItemsOnBackend([id], 'wasted');
+  };
+
+  /** Match recipe ingredient names back to the user's own shelf items. */
+  const findOwnItemIdsByName = (foodNames: string[]): string[] => {
+    const wanted = foodNames.map((n) => n.toLowerCase().trim());
+    return fridgeItems
+      .filter(
+        (item) =>
+          item.user_id === currentUser.id &&
+          wanted.some(
+            (name) =>
+              item.name.toLowerCase().includes(name) || name.includes(item.name.toLowerCase())
+          )
+      )
+      .map((item) => item.id);
+  };
+
+  const recordRescuedMeal = (foodNames: string[], _dollarsSaved: number, mealTitle: string) => {
+    const ids = findOwnItemIdsByName(foodNames);
+    if (ids.length === 0) {
+      console.warn(`No shelf items matched the meal "${mealTitle}"`);
+      return;
+    }
+    setFridgeItems((prev) => prev.filter((item) => !ids.includes(item.id)));
+    resolveItemsOnBackend(ids, 'used');
+  };
+
+  const recordWastedMeal = (foodNames: string[], _dollarsWasted: number, mealTitle: string) => {
+    const ids = findOwnItemIdsByName(foodNames);
+    if (ids.length === 0) {
+      console.warn(`No shelf items matched the meal "${mealTitle}"`);
+      return;
+    }
+    setFridgeItems((prev) => prev.filter((item) => !ids.includes(item.id)));
+    resolveItemsOnBackend(ids, 'wasted');
+  };
+
+  /* ------------------------------------------------------------------
+   * Saved recipes (device only: the backend has no saved-recipe endpoint)
+   * ------------------------------------------------------------------ */
+
+  const persistSavedRecipes = (next: RecipeComposite[]) => {
+    AsyncStorage.setItem(
+      `${SAVED_RECIPES_KEY}_${currentUser.id}`,
+      JSON.stringify(next)
+    ).catch(() => {});
+  };
+
+  const saveRecipe = (recipe: RecipeComposite) => {
+    setSavedRecipes((prev) => {
+      if (prev.some((r) => r.id === recipe.id)) return prev;
+      const next = [recipe, ...prev];
+      persistSavedRecipes(next);
+      return next;
+    });
+  };
+
+  const removeSavedRecipe = (recipeId: string) => {
+    setSavedRecipes((prev) => {
+      const next = prev.filter((r) => r.id !== recipeId);
+      persistSavedRecipes(next);
+      return next;
+    });
+  };
+
+  /* ------------------------------------------------------------------
+   * Feast workflow
+   * ------------------------------------------------------------------ */
+
+  const setFeastOverlay = (feastId: string, overlay: FeastOverlay) => {
+    const next = {
+      ...feastOverlaysRef.current,
+      [feastId]: { ...feastOverlaysRef.current[feastId], ...overlay },
+    };
+    feastOverlaysRef.current = next;
+    setFeastOverlays(next);
+    AsyncStorage.setItem(FEAST_OVERLAY_KEY, JSON.stringify(next)).catch(() => {});
+  };
+
+  /** Feast built on the Feast screen: shown at once, then persisted. */
+  const addCustomFeast = (feast: FeastInvite) => {
+    setFeasts((prev) => [feast, ...prev]);
+
+    if (!backendConnected || !activeBackendUserId) return;
+
+    const recipe =
+      recipes.find((r) => r.id === feast.recipeId) ||
+      feast.candidateRecipes.find((c) => c.recipe.id === feast.recipeId)?.recipe;
+    if (!recipe) {
+      console.warn('Feast has no recipe to persist to the backend');
+      return;
+    }
+
+    const attendeeIds = feast.invitedFriends
+      .map((f) => Number(f.id))
+      .filter((id) => !isNaN(id) && id > 0);
+
+    backendApi
+      .createFeast(
+        toBackendFeastCreate(
+          recipe,
+          feast.partyName,
+          activeBackendUserId,
+          attendeeIds,
+          feast.scheduledFor
+        )
+      )
+      .then((created) => {
+        // Adopt the backend id so later RSVPs and nudges address the right feast
+        setFeasts((prev) =>
+          prev.map((f) =>
+            f.id === feast.id
+              ? {
+                  ...f,
+                  id: String(created.id),
+                  invitationsSent: created.invitations_sent,
+                  invitationsPending: created.invitations_pending,
+                }
+              : f
+          )
+        );
+      })
+      .catch((err) => {
+        console.warn('Could not persist feast to backend:', err);
+      });
+  };
+
+  /** Local only: the backend has no feast status field. */
+  const startFeastCooking = (feastId: string) => {
+    setFeasts((prev) =>
+      prev.map((f) => (f.id === feastId ? { ...f, status: 'cooking' } : f))
+    );
+    setFeastOverlay(feastId, { status: 'cooking' });
+  };
+
+  /**
+   * Feast check-in. The outcome itself is local, but the items it used are
+   * resolved on the backend so the feast shows up in waste and spending.
+   */
+  const completeFeast = (feastId: string, outcome: 'rescued' | 'failed') => {
+    const feast = feasts.find((f) => f.id === feastId);
+
+    setFeasts((prev) =>
+      prev.map((f) => (f.id === feastId ? { ...f, status: 'completed', outcome } : f))
+    );
+    setFeastOverlay(feastId, { status: 'completed', outcome });
+
+    if (!feast) return;
+    const foodNames = (feast.bringBreakdown || []).flatMap((b) =>
+      b.items.split(',').map((i) => i.trim())
+    );
+    const ids = findOwnItemIdsByName(foodNames);
+    if (ids.length === 0) return;
+    setFridgeItems((prev) => prev.filter((item) => !ids.includes(item.id)));
+    resolveItemsOnBackend(ids, outcome === 'rescued' ? 'used' : 'wasted');
+  };
+
+  const respondToFeastInvite = (feastId: string, response: 'accepted' | 'declined') => {
+    setFeasts((prev) =>
+      prev.map((f) => (f.id === feastId ? { ...f, userRsvpStatus: response } : f))
+    );
+
+    const numericFeastId = Number(feastId);
+    if (isNaN(numericFeastId) || !backendConnected || !activeBackendUserId) return;
+
+    backendApi
+      .respondToFeast(numericFeastId, activeBackendUserId, response)
+      .then((updated) =>
+        setFeasts((prev) =>
+          prev.map((f) =>
+            f.id === feastId
+              ? applyFeastOverlay(
+                  toFrontendFeast(updated, activeBackendUserId),
+                  feastOverlaysRef.current
+                )
+              : f
+          )
+        )
+      )
+      .catch((err) => {
+        console.warn('Could not send RSVP to backend:', err);
+      });
+  };
+
+  /**
+   * Nudge a friend who has not replied. The backend resends to everyone still
+   * pending, so the friend id only picks the message shown here.
+   */
+  const nudgeFeastFriend = (feastId: string, friendId: string) => {
+    const numericFeastId = Number(feastId);
+    if (isNaN(numericFeastId) || !backendConnected) return;
+
+    backendApi
+      .resendFeastInvitations(numericFeastId)
+      .then((updated) =>
+        setFeasts((prev) =>
+          prev.map((f) =>
+            f.id === feastId
+              ? applyFeastOverlay(
+                  toFrontendFeast(updated, activeBackendUserId),
+                  feastOverlaysRef.current
+                )
+              : f
+          )
+        )
+      )
+      .catch((err) => {
+        console.warn(`Could not nudge friend ${friendId}:`, err);
+      });
   };
 
   const toggleFollowFriend = (friendId: string) => {
@@ -1478,44 +1729,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setFeasts((prev) => prev.filter((f) => f.id !== feastId));
   };
 
-  const addCustomFeast = (feast: FeastInvite) => {
-    setFeasts((prev) => [feast, ...prev]);
-  };
-
-  const startFeastCooking = (feastId: string) => {
-    setFeasts((prev) =>
-      prev.map((f) => (f.id === feastId ? { ...f, status: 'cooking' as const } : f))
-    );
-  };
-
-  const completeFeast = (feastId: string, outcome: 'rescued' | 'failed') => {
-    setFeasts((prev) =>
-      prev.map((f) =>
-        f.id === feastId ? { ...f, status: 'completed' as const, outcome } : f
-      )
-    );
-  };
-
-  const respondToFeastInvite = (feastId: string, response: 'accepted' | 'declined') => {
-    setFeasts((prev) =>
-      prev.map((f) =>
-        f.id === feastId ? { ...f, userRsvpStatus: response } : f
-      )
-    );
-  };
-
-  const nudgeFeastFriend = (feastId: string, friendId: string) => {
-    console.log(`Nudge sent for feast ${feastId} to friend ${friendId}`);
-  };
-
-  const recordRescuedMeal = (recipe: RecipeComposite) => {
-    console.log('Rescued meal recorded:', recipe.title);
-  };
-
-  const recordWastedMeal = (recipe: RecipeComposite) => {
-    console.log('Wasted meal recorded:', recipe.title);
-  };
-
   const updateProfile = (updates: {
     display_name?: string;
     avatar_url?: string;
@@ -1646,12 +1859,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const generateTopSoloRecipes = async (
-    itemsOverride?: FridgeItemRow[]
+    items?: FridgeItemRow[]
   ): Promise<RecipeComposite[]> => {
     const expiring = getUserExpiringItems(72);
     const itemsToUse =
-      itemsOverride && itemsOverride.length > 0
-        ? itemsOverride
+      items && items.length > 0
+        ? items
         : expiring.length > 0
         ? expiring
         : fridgeItems.filter((i) => i.user_id === currentUser.id).slice(0, 4);
@@ -1753,6 +1966,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       addManualFridgeItem,
       removeFridgeItem,
       tossFridgeItem,
+      recordRescuedMeal,
+      recordWastedMeal,
+      saveRecipe,
+      removeSavedRecipe,
+      addCustomFeast,
+      startFeastCooking,
+      completeFeast,
+      respondToFeastInvite,
+      nudgeFeastFriend,
       toggleFollowFriend,
       addFriend,
       acceptFriendRequest,
@@ -1767,15 +1989,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       generateTopSoloRecipes,
       generateTopDinnerPartyRecipes,
       createFeastInvite,
-      addCustomFeast,
-      startFeastCooking,
-      completeFeast,
-      respondToFeastInvite,
-      nudgeFeastFriend,
-      recordRescuedMeal,
-      recordWastedMeal,
-      saveRecipe,
-      removeSavedRecipe,
       voteOnFeastRecipe,
       simulateFriendVote,
       confirmFeastRecipe,
@@ -1808,6 +2021,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       isFeastsHardcoded,
       isRecipesHardcoded,
       isLoggedIn,
+      feastOverlays,
     ]
   );
 
