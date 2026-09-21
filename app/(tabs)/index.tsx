@@ -351,9 +351,11 @@ export default function ShelfScreen() {
                 : "Fridge Friends"}
             </Text>
             <Text style={styles.urgencySubtitle}>
-              {urgentRedCount === 0
-                ? "All groceries are fresh!"
-                : `${urgentRedCount} ${urgentRedCount === 1 ? "item needs" : "items need"} rescuing!`}
+              {categorizedItems.length === 0 && !isViewingFriend
+                ? "No groceries yet."
+                : urgentRedCount === 0
+                  ? "All groceries are fresh!"
+                  : `${urgentRedCount} ${urgentRedCount === 1 ? "item needs" : "items need"} rescuing!`}
             </Text>
           </View>
 
@@ -410,7 +412,7 @@ export default function ShelfScreen() {
             <View style={styles.shelfTitleCol}>
               <Text style={styles.shelfTitle}>
                 {isViewingFriend
-                  ? `${viewedFriend?.display_name}'s Fridge`
+                  ? `${viewedFriend?.display_name?.split(' ')[0]}'s Fridge`
                   : isSelectMode
                     ? "Pick ingredients"
                     : "Your Fridge"}
@@ -465,9 +467,15 @@ export default function ShelfScreen() {
         {shelfRows.length === 0 ? (
           <View style={styles.emptyShelfBox}>
             <FoodCharacter foodKey="spinach" mood="happy" size={70} />
-            <Text style={styles.emptyShelfTitle}>Your fridge is empty</Text>
+            <Text style={styles.emptyShelfTitle}>
+              {isViewingFriend
+                ? "No items need rescuing!"
+                : 'Your fridge is empty'}
+            </Text>
             <Text style={styles.emptyShelfSub}>
-              Tap + Add groceries or scan a receipt to stock your fridge.
+              {isViewingFriend
+                ? `${viewedFriend?.display_name?.split(' ')[0]} doesn't have any food about to expire.`
+                : 'Tap + Add groceries or scan a receipt to stock your fridge.'}
             </Text>
           </View>
         ) : (
