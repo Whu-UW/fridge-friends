@@ -52,7 +52,7 @@ export default function AddGroceriesActionModal({
               </View>
               <View style={styles.optionTextWrap}>
                 <Text style={styles.optionTitle}>Manually add item</Text>
-                <Text style={styles.optionSubtitle}>Fill in name, price, date bought, and date expired</Text>
+                <Text style={styles.optionSubtitle}>Fill in name, price, date bought, and expiration date</Text>
               </View>
               <Text style={styles.chevron}>›</Text>
             </Pressable>
@@ -67,7 +67,7 @@ export default function AddGroceriesActionModal({
               </View>
               <View style={styles.optionTextWrap}>
                 <Text style={styles.optionTitle}>Scan with camera</Text>
-                <Text style={styles.optionSubtitle}>Snap a receipt photo to scan with Gemini AI</Text>
+                <Text style={styles.optionSubtitle}>Snap a receipt photo and we’ll read the items off it</Text>
               </View>
               <Text style={styles.chevron}>›</Text>
             </Pressable>
@@ -82,7 +82,7 @@ export default function AddGroceriesActionModal({
               </View>
               <View style={styles.optionTextWrap}>
                 <Text style={styles.optionTitle}>Upload a picture</Text>
-                <Text style={styles.optionSubtitle}>Select a receipt photo from your library to scan with AI</Text>
+                <Text style={styles.optionSubtitle}>Pick a receipt photo from your library</Text>
               </View>
               <Text style={styles.chevron}>›</Text>
             </Pressable>

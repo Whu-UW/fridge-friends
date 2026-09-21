@@ -240,9 +240,6 @@ export default function RescueScreen() {
               ) : (
                 <View style={styles.recipeCardsStack}>
                   {soloRecipes.map((recipe, index) => {
-                    const dollarsSaved = Math.round(
-                      recipe.projectedImpact?.dollarsSaved || 9
-                    );
                     const isExpanded = expandedRecipeIds.includes(recipe.id);
                     const isSaved = savedRecipes.some((r) => r.id === recipe.id);
 
@@ -272,11 +269,6 @@ export default function RescueScreen() {
                           <View style={styles.metaPill}>
                             <Text style={styles.metaPillText}>
                               ⏱️ {recipe.cookTime || '25 mins'}
-                            </Text>
-                          </View>
-                          <View style={[styles.metaPill, styles.savingsPill]}>
-                            <Text style={[styles.metaPillText, styles.savingsPillText]}>
-                              💰 Saves ${dollarsSaved}
                             </Text>
                           </View>
                         </View>

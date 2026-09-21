@@ -1,27 +1,27 @@
-import React, { useState, useMemo } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  Pressable,
-  TextInput,
-  StyleSheet,
-  ActivityIndicator,
-  Alert,
-} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useMemo, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp, FeastInvite } from '../../context/AppContext';
-import { Colors, Fonts } from '../../constants/Theme';
-import StickerCard from '../../components/ui/StickerCard';
-import StickerButton from '../../components/ui/StickerButton';
+import CrushedOutcomeModal from '../../components/CrushedOutcomeModal';
 import FoodCharacter from '../../components/FoodCharacter';
 import RescuedCelebrationModal from '../../components/RescuedCelebrationModal';
-import CrushedOutcomeModal from '../../components/CrushedOutcomeModal';
+import StickerButton from '../../components/ui/StickerButton';
+import StickerCard from '../../components/ui/StickerCard';
+import { Colors, Fonts } from '../../constants/Theme';
+import { FeastInvite, useApp } from '../../context/AppContext';
+import { formatScheduledFor } from '../../services/backendApi';
 import {
-  lookupFoodCharacter,
-  getDaysLeft,
-  getStatusUrgency,
+    getDaysLeft,
+    getStatusUrgency
 } from '../../services/foodCharacterLookup';
 
 type FeastStep = 'pick_friends' | 'pick_recipe' | 'waiting' | 'live';
@@ -35,12 +35,15 @@ interface ChatMessage {
   isSelf: boolean;
 }
 
-const DATE_TIME_PRESETS = [
-  'Tonight at 6:30 PM',
-  'Tomorrow at 7:00 PM',
-  'Friday at 6:30 PM',
-  'Saturday at 1:00 PM',
-];
+const DAY_CHOICES = 14;
+const STEP_MINUTES = 15;
+
+const defaultWhen = () => {
+  const d = new Date();
+  d.setHours(18, 30, 0, 0);
+  if (d.getTime() < Date.now()) d.setDate(d.getDate() + 1);
+  return d;
+};
 
 export default function FeastsScreen() {
   const router = useRouter();
@@ -53,6 +56,10 @@ export default function FeastsScreen() {
     backendSyncAttempted,
     getFriendFridgeItems,
     addCustomFeast,
+    feasts,
+    nudgeFeastFriend,
+    updateFeastSchedule,
+    refreshFeast,
   } = useApp();
 
   // Active step in Feast mode
@@ -111,32 +118,73 @@ export default function FeastsScreen() {
 
   // Step 2: Recipe options & Schedule
   const [selectedRecipeIndex, setSelectedRecipeIndex] = useState(0);
-  const [scheduledDateTime, setScheduledDateTime] = useState('Tonight at 6:30 PM');
+  const [when, setWhen] = useState<Date>(defaultWhen);
+  const scheduledIso = when.toISOString();
+  const scheduledDateTime = formatScheduledFor(scheduledIso);
+  const dayOptions = useMemo(() => {
+    const base = new Date();
+    base.setHours(0, 0, 0, 0);
+    return Array.from({ length: DAY_CHOICES }, (_, i) => {
+      const d = new Date(base);
+      d.setDate(base.getDate() + i);
+      return d;
+    });
+  }, []);
+  const pickDay = (day: Date) => {
+    setWhen((prev) => {
+      const next = new Date(day);
+      next.setHours(prev.getHours(), prev.getMinutes(), 0, 0);
+      return next;
+    });
+  };
+  const shiftTime = (minutes: number) => {
+    setWhen((prev) => new Date(prev.getTime() + minutes * 60000));
+  };
 
   // Step 3: Waiting lobby RSVPs & Nudge confirmation
   const [friendRsvps, setFriendRsvps] = useState<Record<string, FriendRsvpStatus>>({});
   const [nudgeConfirmation, setNudgeConfirmation] = useState<string | null>(null);
 
+  // Answers come from the invitees themselves, via the backend. Nobody can
+  // mark a friend as coming on their behalf.
   React.useEffect(() => {
-    setFriendRsvps((prev) => {
-      const next = { ...prev };
-      selectedFriendIds.forEach((id, idx) => {
-        if (!next[id]) {
-          next[id] = idx === 0 ? 'can_go' : 'pending';
-        }
+    const mine = feasts.find((f) => f.hostId === currentUser.id);
+    setFriendRsvps(() => {
+      const next: Record<string, FriendRsvpStatus> = {};
+      selectedFriendIds.forEach((id) => {
+        const st = mine?.invitedFriends.find((f) => f.id === id)?.status;
+        next[id] = st === 'accepted' ? 'can_go' : st === 'declined' ? 'cannot_go' : 'pending';
       });
       return next;
     });
-  }, [selectedFriendIds]);
+  }, [selectedFriendIds, feasts, currentUser.id]);
 
-  const handleSetFriendRsvp = (friendId: string, status: FriendRsvpStatus) => {
-    setFriendRsvps((prev) => ({
-      ...prev,
-      [friendId]: status,
-    }));
-  };
+  // Poll the backend for RSVP updates when host is in the waiting lobby
+  React.useEffect(() => {
+    if (currentStep !== 'waiting') return;
+    const mine = feasts.find((f) => f.hostId === currentUser.id);
+    if (!mine || isNaN(Number(mine.id))) return;
+    const allResponded = mine.invitedFriends.every(
+      (f) => f.status === 'accepted' || f.status === 'declined'
+    );
+    if (allResponded) return;
+    const timer = setInterval(() => {
+      refreshFeast(mine.id);
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [currentStep, feasts, currentUser.id]);
 
-  const handleNudgeFriend = (name: string) => {
+  // Toggle for inline schedule editor in the waiting lobby
+  const [isEditingSchedule, setIsEditingSchedule] = useState(false);
+
+  const handleNudgeFriend = (name: string, friendId?: string) => {
+    const mine = feasts.find((f) => f.hostId === currentUser.id);
+    if (mine) {
+      const targets = friendId
+        ? [friendId]
+        : mine.invitedFriends.filter((f) => f.status === 'pending').map((f) => f.id);
+      targets.forEach((id) => nudgeFeastFriend(mine.id, id));
+    }
     const msg = `Confirmation: Nudge reminder sent to ${name}!`;
     setNudgeConfirmation(msg);
     Alert.alert('Nudge Sent! 🔔', msg);
@@ -255,12 +303,12 @@ export default function FeastsScreen() {
   const handleSendInvite = () => {
     const invitedFriendsList = mutualFriends
       .filter((f) => selectedFriendIds.includes(f.id))
-      .map((f, idx) => ({
+      .map((f) => ({
         id: f.id,
         name: f.display_name,
         username: f.username,
         avatarUrl: f.avatar_url || '',
-        status: (idx === 0 ? 'accepted' : 'pending') as 'accepted' | 'pending',
+        status: 'pending' as 'accepted' | 'pending',
       }));
 
     const newFeast: FeastInvite = {
@@ -277,7 +325,7 @@ export default function FeastsScreen() {
       invitedFriends: invitedFriendsList,
       status: 'pending',
       userRsvpStatus: 'host',
-      scheduledFor: scheduledDateTime,
+      scheduledFor: scheduledIso,
       bringBreakdown: activeRecipe.bringList,
       cookingTasks: activeRecipe.steps.map((step, idx) => ({
         step_number: idx + 1,
@@ -289,8 +337,12 @@ export default function FeastsScreen() {
     addCustomFeast(newFeast);
     Alert.alert(
       'Invites Sent! ✉️',
-      `Sent feast invites for "${activeRecipe.title}" (${scheduledDateTime})! You can track RSVPs in Meals.`,
+      `Sent feast invites for "${activeRecipe.title}" (${scheduledDateTime})! Friends must confirm before they're counted in.`,
       [
+        {
+          text: 'Track RSVPs',
+          onPress: () => setCurrentStep('waiting'),
+        },
         {
           text: 'Go to Meals 🍳',
           onPress: () => router.push('/(tabs)/meals'),
@@ -523,37 +575,55 @@ export default function FeastsScreen() {
             <View style={styles.scheduleCardWrap}>
               <StickerCard backgroundColor={Colors.paper} borderRadius={22} style={styles.scheduleCard}>
                 <Text style={styles.scheduleHeading}>Select feast date & time 📅</Text>
-                <View style={styles.dateTimePresetsRow}>
-                  {DATE_TIME_PRESETS.map((preset) => {
-                    const isPicked = scheduledDateTime === preset;
-                    return (
-                      <Pressable
-                        key={preset}
-                        style={[
-                          styles.dateTimePresetPill,
-                          isPicked && styles.dateTimePresetPillActive,
-                        ]}
-                        onPress={() => setScheduledDateTime(preset)}
-                      >
-                        <Text
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.dateTimePresetsRow}>
+                    {dayOptions.map((day) => {
+                      const isPicked = day.toDateString() === when.toDateString();
+                      return (
+                        <Pressable
+                          key={day.toISOString()}
                           style={[
-                            styles.dateTimePresetText,
-                            isPicked && styles.dateTimePresetTextActive,
+                            styles.dateTimePresetPill,
+                            isPicked && styles.dateTimePresetPillActive,
                           ]}
+                          onPress={() => pickDay(day)}
                         >
-                          {preset}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+                          <Text
+                            style={[
+                              styles.dateTimePresetText,
+                              isPicked && styles.dateTimePresetTextActive,
+                            ]}
+                          >
+                            {day.toLocaleDateString(undefined, {
+                              weekday: 'short',
+                              day: 'numeric',
+                              month: 'short',
+                            })}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+                <View style={styles.dateTimePresetsRow}>
+                  <Pressable style={styles.dateTimePresetPill} onPress={() => shiftTime(-60)}>
+                    <Text style={styles.dateTimePresetText}>− 1 hr</Text>
+                  </Pressable>
+                  <Pressable style={styles.dateTimePresetPill} onPress={() => shiftTime(-STEP_MINUTES)}>
+                    <Text style={styles.dateTimePresetText}>− {STEP_MINUTES} min</Text>
+                  </Pressable>
+                  <View style={[styles.dateTimePresetPill, styles.dateTimePresetPillActive]}>
+                    <Text style={[styles.dateTimePresetText, styles.dateTimePresetTextActive]}>
+                      {when.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                    </Text>
+                  </View>
+                  <Pressable style={styles.dateTimePresetPill} onPress={() => shiftTime(STEP_MINUTES)}>
+                    <Text style={styles.dateTimePresetText}>+ {STEP_MINUTES} min</Text>
+                  </Pressable>
+                  <Pressable style={styles.dateTimePresetPill} onPress={() => shiftTime(60)}>
+                    <Text style={styles.dateTimePresetText}>+ 1 hr</Text>
+                  </Pressable>
                 </View>
-                <TextInput
-                  style={styles.customDateTimeInput}
-                  value={scheduledDateTime}
-                  onChangeText={setScheduledDateTime}
-                  placeholder="Or custom date/time (e.g. Saturday 7:00 PM)"
-                  placeholderTextColor="#8A776A"
-                />
               </StickerCard>
             </View>
 
@@ -582,11 +652,125 @@ export default function FeastsScreen() {
               </Pressable>
               <View style={{ flex: 1 }}>
                 <Text style={styles.headerTitle}>Waiting for friends</Text>
-                <Text style={styles.headerSubtitle}>
-                  {activeRecipe.title} · {scheduledDateTime}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                  <Text style={styles.headerSubtitle}>
+                    {activeRecipe.title} · {scheduledDateTime}
+                  </Text>
+                  <Pressable
+                    onPress={() => setIsEditingSchedule((prev) => !prev)}
+                    hitSlop={6}
+                    style={{
+                      backgroundColor: isEditingSchedule ? Colors.terracotta : '#F0E6DA',
+                      paddingHorizontal: 8,
+                      paddingVertical: 3,
+                      borderRadius: 10,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: Fonts.bodySemiBold,
+                        fontSize: 11,
+                        color: isEditingSchedule ? '#fff' : Colors.terracotta,
+                      }}
+                    >
+                      {isEditingSchedule ? 'Done' : '✏️ Edit time'}
+                    </Text>
+                  </Pressable>
+                </View>
               </View>
             </View>
+
+            {/* Inline Schedule Editor (collapsible) */}
+            {isEditingSchedule && (
+              <StickerCard backgroundColor={Colors.paper} borderRadius={22} style={styles.scheduleCard}>
+                <Text style={styles.scheduleHeading}>Change feast date & time 📅</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.dateTimePresetsRow}>
+                    {dayOptions.map((day) => {
+                      const isPicked = day.toDateString() === when.toDateString();
+                      return (
+                        <Pressable
+                          key={day.toISOString()}
+                          style={[
+                            styles.dateTimePresetPill,
+                            isPicked && styles.dateTimePresetPillActive,
+                          ]}
+                          onPress={() => {
+                            pickDay(day);
+                            const mine = feasts.find((f) => f.hostId === currentUser.id);
+                            if (mine) {
+                              const next = new Date(day);
+                              next.setHours(when.getHours(), when.getMinutes(), 0, 0);
+                              updateFeastSchedule(mine.id, next.toISOString());
+                            }
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.dateTimePresetText,
+                              isPicked && styles.dateTimePresetTextActive,
+                            ]}
+                          >
+                            {day.toLocaleDateString(undefined, {
+                              weekday: 'short',
+                              day: 'numeric',
+                              month: 'short',
+                            })}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+                <View style={styles.dateTimePresetsRow}>
+                  <Pressable
+                    style={styles.dateTimePresetPill}
+                    onPress={() => {
+                      shiftTime(-60);
+                      const mine = feasts.find((f) => f.hostId === currentUser.id);
+                      if (mine) updateFeastSchedule(mine.id, new Date(when.getTime() - 60 * 60000).toISOString());
+                    }}
+                  >
+                    <Text style={styles.dateTimePresetText}>− 1 hr</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.dateTimePresetPill}
+                    onPress={() => {
+                      shiftTime(-STEP_MINUTES);
+                      const mine = feasts.find((f) => f.hostId === currentUser.id);
+                      if (mine) updateFeastSchedule(mine.id, new Date(when.getTime() - STEP_MINUTES * 60000).toISOString());
+                    }}
+                  >
+                    <Text style={styles.dateTimePresetText}>− {STEP_MINUTES} min</Text>
+                  </Pressable>
+                  <View style={[styles.dateTimePresetPill, styles.dateTimePresetPillActive]}>
+                    <Text style={[styles.dateTimePresetText, styles.dateTimePresetTextActive]}>
+                      {when.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={styles.dateTimePresetPill}
+                    onPress={() => {
+                      shiftTime(STEP_MINUTES);
+                      const mine = feasts.find((f) => f.hostId === currentUser.id);
+                      if (mine) updateFeastSchedule(mine.id, new Date(when.getTime() + STEP_MINUTES * 60000).toISOString());
+                    }}
+                  >
+                    <Text style={styles.dateTimePresetText}>+ {STEP_MINUTES} min</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.dateTimePresetPill}
+                    onPress={() => {
+                      shiftTime(60);
+                      const mine = feasts.find((f) => f.hostId === currentUser.id);
+                      if (mine) updateFeastSchedule(mine.id, new Date(when.getTime() + 60 * 60000).toISOString());
+                    }}
+                  >
+                    <Text style={styles.dateTimePresetText}>+ 1 hr</Text>
+                  </Pressable>
+                </View>
+              </StickerCard>
+            )}
 
             {/* Nudge Confirmation Message Banner */}
             {nudgeConfirmation && (
@@ -632,32 +816,12 @@ export default function FeastsScreen() {
                       <Text style={styles.lobbyName}>{friendName}</Text>
                       <Text style={styles.lobbySub}>
                         {isCanGo
-                          ? 'Notified: Can go! Bringing ingredients.'
+                          ? 'Confirmed. Bringing ingredients.'
                           : isCannotGo
-                          ? 'Notified: Cannot go this time.'
-                          : 'Notified: Invite sent, awaiting response.'}
+                          ? 'Cannot go this time.'
+                          : 'Invite sent. Waiting for them to confirm.'}
                       </Text>
 
-                      {/* Interactive Simulation Controls */}
-                      <View style={styles.rsvpSimRow}>
-                        <Text style={styles.simLabel}>Simulate:</Text>
-                        <Pressable
-                          style={[styles.simBtn, isCanGo && styles.simBtnActiveCanGo]}
-                          onPress={() => handleSetFriendRsvp(friend.id, 'can_go')}
-                        >
-                          <Text style={[styles.simBtnText, isCanGo && styles.simBtnTextActive]}>
-                            Can go
-                          </Text>
-                        </Pressable>
-                        <Pressable
-                          style={[styles.simBtn, isCannotGo && styles.simBtnActiveCannotGo]}
-                          onPress={() => handleSetFriendRsvp(friend.id, 'cannot_go')}
-                        >
-                          <Text style={[styles.simBtnText, isCannotGo && styles.simBtnTextActive]}>
-                            Cannot go
-                          </Text>
-                        </Pressable>
-                      </View>
                     </View>
 
                     {/* Status Badge & Nudge Button */}
@@ -690,7 +854,7 @@ export default function FeastsScreen() {
 
                       <Pressable
                         style={styles.nudgePillBtn}
-                        onPress={() => handleNudgeFriend(friendName)}
+                        onPress={() => handleNudgeFriend(friendName, friend.id)}
                       >
                         <Text style={styles.nudgePillBtnText}>Nudge 🔔</Text>
                       </Pressable>

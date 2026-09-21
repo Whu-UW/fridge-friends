@@ -1,25 +1,25 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  Pressable,
-  StyleSheet,
   ActivityIndicator,
   Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp } from '../../context/AppContext';
-import { Colors, Fonts } from '../../constants/Theme';
-import StickerCard from '../../components/ui/StickerCard';
-import StickerButton from '../../components/ui/StickerButton';
-import FoodCharacter from '../../components/FoodCharacter';
-import ChangeBuddyModal from '../../components/ChangeBuddyModal';
 import AccountEditModal from '../../components/AccountEditModal';
-import { backendApi, BackendStats, BackendBuddy } from '../../services/backendApi';
-import { CharacterKey, STARTER_BUDDIES, buddyKeyFromBackend, buddyToBackend } from '../../services/foodCharacterLookup';
+import ChangeBuddyModal from '../../components/ChangeBuddyModal';
+import FoodCharacter from '../../components/FoodCharacter';
+import StickerButton from '../../components/ui/StickerButton';
+import StickerCard from '../../components/ui/StickerCard';
+import { Colors, Fonts } from '../../constants/Theme';
+import { useApp } from '../../context/AppContext';
+import { backendApi, BackendBuddy, BackendStats } from '../../services/backendApi';
+import { buddyKeyFromBackend, buddyToBackend, CharacterKey, STARTER_BUDDIES } from '../../services/foodCharacterLookup';
 
 const DIET_OPTIONS = ['Vegetarian', 'Vegan', 'Pescatarian', 'Gluten-free', 'Dairy-free'];
 const AVOID_OPTIONS = ['Peanuts', 'Shellfish', 'Tree nuts', 'Sesame'];
@@ -392,25 +392,27 @@ export default function ProfileYouScreen() {
             <ActivityIndicator color={Colors.terracotta} style={{ marginVertical: 24 }} />
           ) : statsError || !stats ? (
             <Text style={styles.wasteTrendText}>
-              {statsError ? `Could not load your stats: ${statsError}` : 'No stats yet.'}
+              {statsError
+                ? 'Could not load your waste and spending right now. Pull down to try again.'
+                : 'No stats yet.'}
             </Text>
           ) : (
             <>
               {/* Spent - Wasted - Rescued */}
               <View style={styles.kpiCardsRow}>
-                <StickerCard backgroundColor={Colors.paper} borderRadius={18} style={styles.kpiCard}>
+                <StickerCard backgroundColor={Colors.paper} borderRadius={18} containerStyle={{ flex: 1 }} style={styles.kpiCard}>
                   <Text style={styles.kpiLabel}>Spent</Text>
                   <Text style={styles.kpiValue}>{money(stats.spent)}</Text>
                 </StickerCard>
 
-                <StickerCard backgroundColor={Colors.paper} borderRadius={18} style={styles.kpiCard}>
+                <StickerCard backgroundColor={Colors.paper} borderRadius={18} containerStyle={{ flex: 1 }} style={styles.kpiCard}>
                   <Text style={styles.kpiLabel}>Wasted</Text>
                   <Text style={[styles.kpiValue, { color: Colors.terracotta }]}>
                     {money(stats.wasted)}
                   </Text>
                 </StickerCard>
 
-                <StickerCard backgroundColor={Colors.paper} borderRadius={18} style={styles.kpiCard}>
+                <StickerCard backgroundColor={Colors.paper} borderRadius={18} containerStyle={{ flex: 1 }} style={styles.kpiCard}>
                   <Text style={styles.kpiLabel}>Rescued</Text>
                   <Text style={[styles.kpiValue, { color: Colors.fresh.text }]}>
                     {money(stats.rescued)}
@@ -796,7 +798,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   kpiCard: {
-    flex: 1,
     padding: 12,
     alignItems: 'center',
   },

@@ -1,21 +1,22 @@
-import React, { useState, useMemo } from 'react';
+import { useRouter } from 'expo-router';
+import { useMemo, useState } from 'react';
 import {
-  View,
-  Text,
+  Alert,
+  Pressable,
   ScrollView,
   StyleSheet,
-  Pressable,
-  Alert,
+  Text,
+  View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp, FeastInvite } from '../../context/AppContext';
-import { Colors, Fonts } from '../../constants/Theme';
-import StickerCard from '../../components/ui/StickerCard';
-import StickerButton from '../../components/ui/StickerButton';
+import CrushedOutcomeModal from '../../components/CrushedOutcomeModal';
 import FoodCharacter from '../../components/FoodCharacter';
 import RescuedCelebrationModal from '../../components/RescuedCelebrationModal';
-import CrushedOutcomeModal from '../../components/CrushedOutcomeModal';
+import StickerButton from '../../components/ui/StickerButton';
+import StickerCard from '../../components/ui/StickerCard';
+import { Colors, Fonts } from '../../constants/Theme';
+import { FeastInvite, useApp } from '../../context/AppContext';
+import { backendApi, formatScheduledFor } from '../../services/backendApi';
 
 export default function MealsScreen() {
   const router = useRouter();
@@ -97,11 +98,35 @@ export default function MealsScreen() {
 
   const handleAcceptInvite = (feast: FeastInvite) => {
     respondToFeastInvite(feast.id, 'accepted');
+    // Mark any associated notification as read
+    const feastNumId = Number(feast.id);
+    if (!isNaN(feastNumId) && currentUser.id) {
+      backendApi
+        .getNotifications(Number(currentUser.id), { unreadOnly: true })
+        .then((notifs) => {
+          notifs
+            .filter((n) => n.feast_id === feastNumId)
+            .forEach((n) => backendApi.markNotificationRead(n.id).catch(() => {}));
+        })
+        .catch(() => {});
+    }
     Alert.alert('Invite Accepted! 🎉', `You joined ${feast.partyName}!`);
   };
 
   const handleDeclineInvite = (feast: FeastInvite) => {
     respondToFeastInvite(feast.id, 'declined');
+    // Mark any associated notification as read
+    const feastNumId = Number(feast.id);
+    if (!isNaN(feastNumId) && currentUser.id) {
+      backendApi
+        .getNotifications(Number(currentUser.id), { unreadOnly: true })
+        .then((notifs) => {
+          notifs
+            .filter((n) => n.feast_id === feastNumId)
+            .forEach((n) => backendApi.markNotificationRead(n.id).catch(() => {}));
+        })
+        .catch(() => {});
+    }
     Alert.alert('Invite Declined', `You declined the invitation to ${feast.partyName}.`);
   };
 
@@ -245,7 +270,7 @@ export default function MealsScreen() {
                           <View style={styles.youreInBanner}>
                             <Text style={styles.youreInTitle}>🎉 You're in!</Text>
                             <Text style={styles.youreInSubtitle}>
-                              See you {invite.scheduledFor || 'tonight at 7:00 PM'}
+                              See you {formatScheduledFor(invite.scheduledFor) || 'soon'}
                             </Text>
                           </View>
 
@@ -303,7 +328,7 @@ export default function MealsScreen() {
                             </View>
                             <View style={styles.inviteTimeBadge}>
                               <Text style={styles.inviteTimeBadgeText}>
-                                {invite.scheduledFor || 'Tonight'}
+                                {formatScheduledFor(invite.scheduledFor) || 'Soon'}
                               </Text>
                             </View>
                           </View>
@@ -381,7 +406,7 @@ export default function MealsScreen() {
                       <View style={{ flex: 1 }}>
                         <Text style={styles.feastTitle}>{feast.partyName}</Text>
                         <Text style={styles.feastMeta}>
-                          {feast.recipeTitle} · {feast.scheduledFor || 'Upcoming'}
+                          {feast.recipeTitle} · {formatScheduledFor(feast.scheduledFor) || 'Upcoming'}
                         </Text>
                       </View>
                       <View style={styles.statusPillPending}>
@@ -459,7 +484,7 @@ export default function MealsScreen() {
                       <View style={{ flex: 1 }}>
                         <Text style={styles.feastTitle}>{feast.recipeTitle}</Text>
                         <Text style={styles.feastMeta}>
-                          {feast.cookTime || '35 min'} · {feast.scheduledFor || 'Tonight'}
+                          {feast.cookTime || '35 min'} · {formatScheduledFor(feast.scheduledFor) || 'Time to be set'}
                         </Text>
                       </View>
                       <View style={styles.statusPillCooking}>
@@ -538,7 +563,7 @@ export default function MealsScreen() {
                         <View style={{ flex: 1 }}>
                           <Text style={styles.completedTitle}>{feast.recipeTitle}</Text>
                           <Text style={styles.completedMeta}>
-                            {feast.partyName} · {feast.scheduledFor || 'Completed'}
+                            {feast.partyName} · {formatScheduledFor(feast.scheduledFor) || 'Completed'}
                           </Text>
                         </View>
                         <View
@@ -589,9 +614,6 @@ export default function MealsScreen() {
                       ? recipe.focusExpiringItems
                       : recipe.ingredients?.map((i) => i.item_name) || [];
 
-                  const dollarsSaved = Math.round(
-                    recipe.projectedImpact?.dollarsSaved || 0
-                  );
 
                   return (
                     <StickerCard
@@ -607,11 +629,6 @@ export default function MealsScreen() {
                             <Text style={styles.metaPill}>
                               ⏱️ {recipe.cookTime || '25 min'}
                             </Text>
-                            {dollarsSaved > 0 && (
-                              <Text style={[styles.metaPill, styles.savingsPill]}>
-                                💰 Saves ${dollarsSaved}
-                              </Text>
-                            )}
                             {recipe.cookingTasks && recipe.cookingTasks.length > 0 && (
                               <Text style={styles.metaPill}>
                                 📋 {recipe.cookingTasks.length} steps

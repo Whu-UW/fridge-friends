@@ -179,7 +179,7 @@ export default function AddGroceryModal({
               </View>
 
               <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Date expired</Text>
+                <Text style={styles.label}>Expiration date</Text>
                 <Pressable
                   style={[styles.inputWrap, styles.dateButton]}
                   onPress={() => {

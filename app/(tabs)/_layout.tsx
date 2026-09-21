@@ -2,9 +2,11 @@ import { Tabs } from "expo-router";
 import { Platform, Text } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors, Fonts } from "../../constants/Theme";
+import { useApp } from "../../context/AppContext";
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const { unreadNotificationCount } = useApp();
 
   // Android edge-to-edge system navigation bar safe area handling
   const bottomPadding =
@@ -53,6 +55,8 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Text style={{ fontSize: 20, color }}>{focused ? "🍳" : "🍽️"}</Text>
           ),
+          tabBarBadge: unreadNotificationCount > 0 ? unreadNotificationCount : undefined,
+          tabBarBadgeStyle: { backgroundColor: '#E6795A', fontSize: 11 },
         }}
       />
 

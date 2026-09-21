@@ -342,34 +342,16 @@ export default function ShelfScreen() {
   }
 
   // Safe bottom padding preventing Android 3-button navigation bar overlap with stacked buttons
-  const safeBottomPadding = Math.max(insets.bottom, 16) + 160;
+  // Measured rather than guessed: the bar grows with the safe-area inset and
+  // with its own button labels, and a short guess left the last shelf row
+  // sitting underneath it.
+  const [bottomBarHeight, setBottomBarHeight] = useState(160);
+  const safeBottomPadding = bottomBarHeight + 24;
 
   return (
     <View style={styles.screen}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[
-          styles.content,
-          { paddingBottom: safeBottomPadding },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Friend Fridge Banner */}
-        {isViewingFriend && (
-          <View style={styles.viewingFriendBanner}>
-            <Pressable
-              style={styles.backToMyFridgeBtn}
-              onPress={() => router.replace("/(tabs)")}
-            >
-              <Text style={styles.backToMyFridgeText}>‹ Back to My Fridge</Text>
-            </Pressable>
-            <Text style={styles.viewingFriendNotice}>
-              Viewing {viewedFriend?.display_name}'s Fridge
-            </Text>
-          </View>
-        )}
-
-        {/* SECTION 1: Header */}
+      {/* Pinned header: stays put while the shelf scrolls under it */}
+      <View style={styles.pinnedHeader}>
         <View style={styles.headerRow}>
           <View style={styles.headerTextWrap}>
             <Text style={styles.appTitle}>
@@ -394,6 +376,30 @@ export default function ShelfScreen() {
             />
           </View>
         </View>
+      </View>
+
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: safeBottomPadding },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Friend Fridge Banner */}
+        {isViewingFriend && (
+          <View style={styles.viewingFriendBanner}>
+            <Pressable
+              style={styles.backToMyFridgeBtn}
+              onPress={() => router.replace("/(tabs)")}
+            >
+              <Text style={styles.backToMyFridgeText}>‹ Back to My Fridge</Text>
+            </Pressable>
+            <Text style={styles.viewingFriendNotice}>
+              Viewing {viewedFriend?.display_name}'s Fridge
+            </Text>
+          </View>
+        )}
 
         {/* SECTION 2: Top Action Button (+ Add groceries) */}
         {!isViewingFriend && (
@@ -524,6 +530,9 @@ export default function ShelfScreen() {
                           label={item.timeFormatted}
                           status={item.urgencyStatus}
                           size="small"
+                          // StatusChip pins itself to flex-start, which left-aligned
+                          // the chip under a centred name. Centre it back.
+                          style={{ alignSelf: "center" }}
                         />
                       </Pressable>
                     );
@@ -562,6 +571,7 @@ export default function ShelfScreen() {
             styles.bottomFloatingBar,
             { paddingBottom: Math.max(insets.bottom, 12) + 8 },
           ]}
+          onLayout={(e) => setBottomBarHeight(e.nativeEvent.layout.height)}
         >
           <View style={styles.bottomButtonsStack}>
             <StickerButton
@@ -651,8 +661,14 @@ const styles = StyleSheet.create({
   scroll: {
     flex: 1,
   },
-  content: {
+  pinnedHeader: {
     paddingTop: 54,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    backgroundColor: Colors.cream,
+  },
+  content: {
+    paddingTop: 8,
     paddingHorizontal: 20,
   },
   headerRow: {
@@ -862,13 +878,15 @@ const styles = StyleSheet.create({
   },
   shelfCharactersRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    // flex-start, not space-between: a row holding one or two items has to sit
+    // in the same columns as the full rows above it rather than spreading out
+    justifyContent: "flex-start",
     paddingHorizontal: 8,
     alignItems: "flex-end",
     marginBottom: -6, // Characters stand on plank
   },
   foodSpot: {
-    width: "31%",
+    width: "33.33%",
     alignItems: "center",
     gap: 4,
     position: "relative",
@@ -941,7 +959,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "rgba(251, 243, 228, 0.95)",
+    backgroundColor: Colors.cream,
     borderTopWidth: 1.5,
     borderTopColor: "#E6D7C3",
     paddingHorizontal: 16,

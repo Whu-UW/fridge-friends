@@ -103,10 +103,10 @@ export default function CookAndCheckinScreen() {
         <StickerCard backgroundColor={Colors.paper} borderRadius={22} style={styles.rescuingCard}>
           <Text style={styles.rescuingHeading}>You're rescuing</Text>
           <View style={styles.charactersRow}>
-            {rescuedFoods.slice(0, 4).map((food, idx) => (
+            {rescuedFoods.map((food, idx) => (
               <View key={idx} style={styles.characterSpot}>
                 <FoodCharacter name={food} mood="uneasy" size={68} animate={true} />
-                <Text style={styles.characterName} numberOfLines={1}>
+                <Text style={styles.characterName} numberOfLines={2}>
                   {food}
                 </Text>
               </View>
@@ -261,10 +261,14 @@ const styles = StyleSheet.create({
   },
   charactersRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
     alignItems: 'flex-end',
+    rowGap: 14,
   },
   characterSpot: {
+    // A quarter of the row, so four sit per line and the rest wrap under them
+    width: '25%',
     alignItems: 'center',
     gap: 4,
   },
@@ -272,6 +276,7 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.headingMedium,
     fontSize: 13,
     color: Colors.ink,
+    textAlign: 'center',
   },
   stepsCard: {
     padding: 20,

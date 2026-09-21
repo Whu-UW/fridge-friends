@@ -25,6 +25,12 @@ export interface ScannedReceiptResult {
   items: ScannedReceiptItem[];
 }
 
+/** What a person sees when a scan cannot be completed. No vendor, no model, no status code. */
+const SCAN_BUSY_ERROR =
+  'Receipt scanning is busy right now. Please try again in a moment.';
+const SCAN_FAILED_ERROR =
+  'Could not read that receipt. Please try again, or add the items yourself.';
+
 export const isGeminiKeyConfigured = (): boolean => {
   const key = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
   return Boolean(key && key.trim().length > 0 && !key.includes('your_'));
@@ -80,7 +86,7 @@ export async function scanGroceryReceiptWithGemini(
   const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 
   if (!apiKey || !apiKey.trim()) {
-    throw new Error('Gemini API key not found in EXPO_PUBLIC_GEMINI_API_KEY.');
+    throw new Error(SCAN_FAILED_ERROR);
   }
 
   // Active verified models available for this API key
@@ -146,7 +152,9 @@ Rules:
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         if (mIdx > 0 || attempt > 1) {
-          onStatusUpdate?.(`High traffic detected. Retrying with ${model}...`);
+          // The model being tried is our business, not the user's
+          console.log(`Receipt scan: retrying with ${model}`);
+          onStatusUpdate?.('Still reading, this one is taking a moment...');
           // Short pause before retrying busy cluster
           await new Promise((resolve) => setTimeout(resolve, 1500));
         }
@@ -165,11 +173,13 @@ Rules:
         } else if (response.status === 503 || response.status === 429) {
           // 503 High demand or 429 Rate limit: proceed to next attempt or model
           const errText = await response.text();
-          lastError = new Error(`Model ${model} busy (${response.status}). Retrying...`);
+          console.warn(`Receipt scan: ${model} busy (${response.status})`);
+          lastError = new Error(SCAN_BUSY_ERROR);
           continue;
         } else {
           const errText = await response.text();
-          lastError = new Error(`Gemini API Error (${response.status}): ${errText}`);
+          console.warn(`Receipt scan failed (${response.status}): ${errText.slice(0, 200)}`);
+          lastError = new Error(SCAN_FAILED_ERROR);
           break; // Don't retry client errors (400, etc.) on the same model
         }
       } catch (err: any) {
@@ -181,12 +191,7 @@ Rules:
   }
 
   if (!rawJson) {
-    throw (
-      lastError ||
-      new Error(
-        'Gemini servers are currently experiencing peak traffic across all models. Please try scanning again in a moment.'
-      )
-    );
+    throw lastError || new Error(SCAN_BUSY_ERROR);
   }
 
   const parsed = JSON.parse(rawJson);

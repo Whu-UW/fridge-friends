@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, FriendEntry } from '../../context/AppContext';
 import { Colors, Fonts } from '../../constants/Theme';
@@ -24,6 +24,7 @@ export default function SocialScreen() {
   const {
     friends,
     addFriend,
+    refreshFriends,
     acceptFriendRequest,
     removeFriend,
     getFriendFridgeItems,
@@ -36,25 +37,37 @@ export default function SocialScreen() {
 
   // Split into accepted and pending requests
   const acceptedFriends = friends.filter((f) => f.status === 'accepted');
-  const pendingRequests = friends.filter((f) => f.status === 'pending');
+  const pendingRequests = friends.filter(
+    (f) => f.status === 'pending' && f.direction !== 'outgoing'
+  );
+  const sentRequests = friends.filter(
+    (f) => f.status === 'pending' && f.direction === 'outgoing'
+  );
 
-  const handleInviteSubmit = () => {
+  // Pick up requests other people have sent since we last looked
+  useFocusEffect(
+    useCallback(() => {
+      refreshFriends();
+    }, [])
+  );
+
+  const handleInviteSubmit = async () => {
     const trimmed = inviteUserId.trim().replace('@', '');
     if (!trimmed) {
-      Alert.alert('User ID Required', 'Please enter a friend’s username or user ID.');
+      Alert.alert('Username Required', 'Please enter your friend’s username.');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      addFriend(trimmed);
+      await addFriend(trimmed);
       setInviteUserId('');
       Alert.alert(
         'Invite Sent! 🎉',
-        `Friend request sent to @${trimmed}. Once accepted, you can view each other's fridges and cook feasts!`
+        `Friend request sent to @${trimmed.toLowerCase()}. Once they accept, you can view each other's fridges and cook feasts!`
       );
-    } catch {
-      Alert.alert('Error', 'Could not send friend request.');
+    } catch (err: any) {
+      Alert.alert('Could not send invite', err?.message || 'Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -122,13 +135,13 @@ export default function SocialScreen() {
         <StickerCard backgroundColor={Colors.paper} borderRadius={22} style={styles.inviteCard}>
           <Text style={styles.inviteHeading}>Invite a friend</Text>
           <Text style={styles.inviteSubtext}>
-            Enter their username or User ID to share fridge items
+            Enter their username to share fridge items
           </Text>
 
           <View style={styles.inviteInputRow}>
             <TextInput
               style={styles.inviteInput}
-              placeholder="Username or ID (e.g. nadia_khan)"
+              placeholder="Username (e.g. nadia_khan)"
               placeholderTextColor="#8A776A"
               value={inviteUserId}
               onChangeText={setInviteUserId}
@@ -203,6 +216,34 @@ export default function SocialScreen() {
                     onPress={() => handleDeclineRequest(friend)}
                   >
                     <Text style={styles.declineBtnText}>✕ Decline</Text>
+                  </Pressable>
+                </View>
+              </StickerCard>
+            ))}
+          </View>
+        )}
+
+        {sentRequests.length > 0 && (
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionHeading}>Sent Invites ({sentRequests.length})</Text>
+            {sentRequests.map((friend) => (
+              <StickerCard
+                key={friend.id}
+                backgroundColor="#FFF8E7"
+                borderRadius={20}
+                style={styles.pendingCard}
+              >
+                <View style={styles.pendingCardHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.friendName}>{friend.display_name}</Text>
+                    <Text style={styles.friendUsername}>@{friend.username}</Text>
+                    <Text style={styles.pendingNote}>Waiting for them to accept</Text>
+                  </View>
+                  <Pressable
+                    style={[styles.actionBtn, styles.declineBtn]}
+                    onPress={() => removeFriend(friend.id)}
+                  >
+                    <Text style={styles.declineBtnText}>Cancel</Text>
                   </Pressable>
                 </View>
               </StickerCard>

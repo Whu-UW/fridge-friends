@@ -163,7 +163,7 @@ export default function ScanReceiptModal({
 
   const processImage = async (base64: string, mimeType: string) => {
     setIsScanning(true);
-    setStatusText('Analyzing receipt with Gemini...');
+    setStatusText('Reading the items and prices...');
     try {
       let result: ScannedReceiptResult;
       if (isGeminiKeyConfigured()) {
@@ -183,6 +183,22 @@ export default function ScanReceiptModal({
           dateExpired: expIso,
         };
       });
+      // A scan that reads the photo but finds nothing used to drop the user
+      // back on the upload screen with no items and no explanation, which
+      // reads as the upload having failed. Say so, and give them a row to
+      // type into so the trip is not lost.
+      if (itemsWithDates.length === 0) {
+        Alert.alert(
+          'No items found',
+          'That photo did not look like a grocery receipt. Try a clearer photo of the itemised part, or add the items yourself.',
+          [
+            { text: 'Try another photo', style: 'cancel' },
+            { text: 'Add manually', onPress: handleAddNewItem },
+          ]
+        );
+        return;
+      }
+
       setScannedItems(itemsWithDates);
       const initialRaw: Record<number, string> = {};
       itemsWithDates.forEach((item, i) => {
@@ -190,26 +206,15 @@ export default function ScanReceiptModal({
       });
       setRawPrices(initialRaw);
     } catch (err: any) {
-      Alert.alert('Receipt Scan Notice', 'Gemini encountered a problem parsing the receipt. Loaded demo items to continue.');
-      const mock = await scanGroceryReceiptMock();
-      const tripIso = mock.tripDate ? mock.tripDate.slice(0, 10) : new Date().toISOString().slice(0, 10);
-      setTripDate(tripIso);
-      const itemsWithDates = mock.items.map((it) => {
-        const shelfDays = it.shelfLifeDays && it.shelfLifeDays > 0 ? it.shelfLifeDays : 7;
-        const boughtMs = new Date(tripIso).getTime();
-        const expIso = it.dateExpired || new Date(boughtMs + shelfDays * 864e5).toISOString().slice(0, 10);
-        return {
-          ...it,
-          shelfLifeDays: shelfDays,
-          dateExpired: expIso,
-        };
-      });
-      setScannedItems(itemsWithDates);
-      const initialRaw: Record<number, string> = {};
-      itemsWithDates.forEach((item, i) => {
-        initialRaw[i] = item.price > 0 ? item.price.toString() : '';
-      });
-      setRawPrices(initialRaw);
+      console.warn('Receipt scan failed:', err?.message);
+      Alert.alert(
+        "Couldn't read that receipt",
+        err?.message || 'Please try again, or add the items yourself.',
+        [
+          { text: 'Try another photo', style: 'cancel' },
+          { text: 'Add manually', onPress: handleAddNewItem },
+        ]
+      );
     } finally {
       setIsScanning(false);
       setStatusText('');
@@ -388,7 +393,7 @@ export default function ScanReceiptModal({
               <ActivityIndicator color={Colors.terracotta} size="large" style={{ marginTop: 20 }} />
               <Text style={styles.loadingHeading}>Reading your receipt</Text>
               <Text style={styles.loadingStatusText}>
-                {statusText || 'Extracting items and prices with Gemini AI...'}
+                {statusText || 'Reading the items and prices...'}
               </Text>
             </View>
           ) : scannedItems.length === 0 ? (
@@ -510,7 +515,7 @@ export default function ScanReceiptModal({
 
                       {/* Date expired field (Categories removed) */}
                       <View style={styles.itemExpiryRow}>
-                        <Text style={styles.itemExpiryLabel}>Date expired</Text>
+                        <Text style={styles.itemExpiryLabel}>Expiration date</Text>
                         <Pressable
                           style={styles.itemExpiryBtn}
                           onPress={() => {
