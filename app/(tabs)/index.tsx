@@ -874,7 +874,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
     paddingHorizontal: 8,
     alignItems: "flex-end",
-    marginBottom: -6, // Characters stand on plank
+    marginBottom: 8, // Space between pills and plank
   },
   foodSpot: {
     width: "33.33%",
