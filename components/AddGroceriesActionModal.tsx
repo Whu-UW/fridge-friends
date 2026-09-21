@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { Colors, Fonts, Radius } from '../constants/Theme';
 import StickerCard from './ui/StickerCard';
+import { PencilIcon, CameraIcon, GalleryIcon } from './ui/AppIcons';
 
 interface AddGroceriesActionModalProps {
   visible: boolean;
@@ -48,7 +49,7 @@ export default function AddGroceriesActionModal({
               onPress={onSelectManual}
             >
               <View style={[styles.iconCircle, { backgroundColor: '#E2F0DC' }]}>
-                <Text style={{ fontSize: 24 }}>✏️</Text>
+                <PencilIcon size={22} color={Colors.ink} />
               </View>
               <View style={styles.optionTextWrap}>
                 <Text style={styles.optionTitle}>Manually add item</Text>
@@ -63,7 +64,7 @@ export default function AddGroceriesActionModal({
               onPress={onSelectScanCamera}
             >
               <View style={[styles.iconCircle, { backgroundColor: '#FDEBD0' }]}>
-                <Text style={{ fontSize: 24 }}>📷</Text>
+                <CameraIcon size={22} color={Colors.ink} />
               </View>
               <View style={styles.optionTextWrap}>
                 <Text style={styles.optionTitle}>Scan with camera</Text>
@@ -78,7 +79,7 @@ export default function AddGroceriesActionModal({
               onPress={onSelectUploadPhoto}
             >
               <View style={[styles.iconCircle, { backgroundColor: '#E8E5F8' }]}>
-                <Text style={{ fontSize: 24 }}>🖼️</Text>
+                <GalleryIcon size={22} color={Colors.ink} />
               </View>
               <View style={styles.optionTextWrap}>
                 <Text style={styles.optionTitle}>Upload a picture</Text>

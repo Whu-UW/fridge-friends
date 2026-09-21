@@ -271,12 +271,12 @@ export default function RescueScreen() {
                         <View style={styles.metaRow}>
                           <View style={styles.metaPill}>
                             <Text style={styles.metaPillText}>
-                              ⏱️ {recipe.cookTime || '25 mins'}
+                              {recipe.cookTime || '25 min'}
                             </Text>
                           </View>
                           <View style={[styles.metaPill, styles.savingsPill]}>
                             <Text style={[styles.metaPillText, styles.savingsPillText]}>
-                              💰 Saves ${dollarsSaved}
+                              Saves about ${dollarsSaved}
                             </Text>
                           </View>
                         </View>
@@ -348,13 +348,13 @@ export default function RescueScreen() {
                                 isSaved && styles.saveRecipeBtnTextSaved,
                               ]}
                             >
-                              {isSaved ? '✓ Saved to Meals' : '💾 Save this recipe'}
+                              {isSaved ? 'Saved to Meals' : 'Save this recipe'}
                             </Text>
                           </Pressable>
 
                           <View style={{ flex: 1 }}>
                             <StickerButton
-                              title="Cook now 👩‍🍳"
+                              title="Cook this"
                               onPress={() => handleCookThis(recipe)}
                               variant="primary"
                               size="medium"
@@ -371,7 +371,7 @@ export default function RescueScreen() {
             {/* Bottom Actions: Regenerate Top 5 */}
             <View style={styles.bottomButtonsWrap}>
               <StickerButton
-                title={isLoadingRecipes ? "Regenerating recipes..." : "Regenerate top 5 new recipes 🔄"}
+                title={isLoadingRecipes ? "Regenerating recipes..." : "Regenerate recipes"}
                 onPress={loadRecipes}
                 disabled={isLoadingRecipes}
                 variant="primary"
@@ -488,6 +488,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.ink,
     textAlign: 'center',
+    width: '100%',
   },
   recipesSection: {
     marginBottom: 24,

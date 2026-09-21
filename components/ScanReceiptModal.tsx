@@ -19,6 +19,12 @@ import StickerButton from './ui/StickerButton';
 import FoodCharacter from './FoodCharacter';
 import CalendarPickerModal from './CalendarPickerModal';
 import {
+  ReceiptIcon,
+  CameraIcon,
+  GalleryIcon,
+  CalendarIcon,
+} from './ui/AppIcons';
+import {
   isGeminiKeyConfigured,
   scanGroceryReceiptWithGemini,
   scanGroceryReceiptMock,
@@ -26,6 +32,13 @@ import {
   ScannedReceiptItem,
 } from '../services/receiptOcrService';
 import { lookupFoodCharacter } from '../services/foodCharacterLookup';
+import {
+  getLocalDateString,
+  formatDisplayDate,
+  toMiddayIso,
+  diffCalendarDays,
+  addDaysToLocalDate,
+} from '../utils/dateUtils';
 
 interface ScanReceiptModalProps {
   visible: boolean;
@@ -44,7 +57,7 @@ export default function ScanReceiptModal({
 }: ScanReceiptModalProps) {
   const [isScanning, setIsScanning] = useState(false);
   const [statusText, setStatusText] = useState('');
-  const [tripDate, setTripDate] = useState(new Date().toISOString().slice(0, 10));
+  const [tripDate, setTripDate] = useState(getLocalDateString());
   const [calendarTarget, setCalendarTarget] = useState<
     { type: 'trip' } | { type: 'itemExpiry'; index: number } | null
   >(null);
@@ -78,7 +91,7 @@ export default function ScanReceiptModal({
       setRawPrices({});
       setCalendarTarget(null);
       setIsCalendarVisible(false);
-      setTripDate(new Date().toISOString().slice(0, 10));
+      setTripDate(getLocalDateString());
     }
   }, [visible, imagePayload, initialSource]);
 
@@ -137,12 +150,11 @@ export default function ScanReceiptModal({
     setStatusText('Reading demo receipt...');
     try {
       const mock = await scanGroceryReceiptMock();
-      const tripIso = mock.tripDate ? mock.tripDate.slice(0, 10) : new Date().toISOString().slice(0, 10);
+      const tripIso = mock.tripDate ? mock.tripDate.slice(0, 10) : getLocalDateString();
       setTripDate(tripIso);
       const itemsWithDates = mock.items.map((it) => {
         const shelfDays = it.shelfLifeDays && it.shelfLifeDays > 0 ? it.shelfLifeDays : 7;
-        const boughtMs = new Date(tripIso).getTime();
-        const expIso = it.dateExpired || new Date(boughtMs + shelfDays * 864e5).toISOString().slice(0, 10);
+        const expIso = it.dateExpired || addDaysToLocalDate(tripIso, shelfDays);
         return {
           ...it,
           shelfLifeDays: shelfDays,
@@ -171,12 +183,11 @@ export default function ScanReceiptModal({
       } else {
         result = await scanGroceryReceiptMock();
       }
-      const tripIso = result.tripDate ? result.tripDate.slice(0, 10) : new Date().toISOString().slice(0, 10);
+      const tripIso = result.tripDate ? result.tripDate.slice(0, 10) : getLocalDateString();
       setTripDate(tripIso);
       const itemsWithDates = result.items.map((it) => {
         const shelfDays = it.shelfLifeDays && it.shelfLifeDays > 0 ? it.shelfLifeDays : 7;
-        const boughtMs = new Date(tripIso).getTime();
-        const expIso = it.dateExpired || new Date(boughtMs + shelfDays * 864e5).toISOString().slice(0, 10);
+        const expIso = it.dateExpired || addDaysToLocalDate(tripIso, shelfDays);
         return {
           ...it,
           shelfLifeDays: shelfDays,
@@ -192,12 +203,11 @@ export default function ScanReceiptModal({
     } catch (err: any) {
       Alert.alert('Receipt Scan Notice', 'Gemini encountered a problem parsing the receipt. Loaded demo items to continue.');
       const mock = await scanGroceryReceiptMock();
-      const tripIso = mock.tripDate ? mock.tripDate.slice(0, 10) : new Date().toISOString().slice(0, 10);
+      const tripIso = mock.tripDate ? mock.tripDate.slice(0, 10) : getLocalDateString();
       setTripDate(tripIso);
       const itemsWithDates = mock.items.map((it) => {
         const shelfDays = it.shelfLifeDays && it.shelfLifeDays > 0 ? it.shelfLifeDays : 7;
-        const boughtMs = new Date(tripIso).getTime();
-        const expIso = it.dateExpired || new Date(boughtMs + shelfDays * 864e5).toISOString().slice(0, 10);
+        const expIso = it.dateExpired || addDaysToLocalDate(tripIso, shelfDays);
         return {
           ...it,
           shelfLifeDays: shelfDays,
@@ -244,9 +254,7 @@ export default function ScanReceiptModal({
   const handleUpdateItemExpiry = (index: number, newDate: string) => {
     setScannedItems((prev) => {
       const updated = [...prev];
-      const boughtMs = new Date(tripDate).getTime();
-      const expMs = new Date(newDate).getTime();
-      const diffDays = Math.max(1, Math.round((expMs - boughtMs) / 864e5));
+      const diffDays = Math.max(1, diffCalendarDays(tripDate, newDate));
       updated[index] = {
         ...updated[index],
         dateExpired: newDate,
@@ -276,8 +284,7 @@ export default function ScanReceiptModal({
 
   const handleAddNewItem = () => {
     const nextIdx = scannedItems.length;
-    const boughtMs = new Date(tripDate).getTime();
-    const defaultExp = new Date(boughtMs + 7 * 864e5).toISOString().slice(0, 10);
+    const defaultExp = addDaysToLocalDate(tripDate, 7);
     setScannedItems((prev) => [
       ...prev,
       {
@@ -314,16 +321,15 @@ export default function ScanReceiptModal({
       return;
     }
 
-    const boughtMs = new Date(tripDate).getTime();
     const cleanedItems = scannedItems
       .filter((item) => item.name.trim().length > 0)
       .map((item, idx) => {
         const raw = rawPrices[idx];
         const parsed = raw !== undefined && raw !== '' ? parseFloat(raw) : item.price;
         const lookup = lookupFoodCharacter(item.name.trim());
-        const expDate = item.dateExpired || new Date(boughtMs + (item.shelfLifeDays || 7) * 864e5).toISOString().slice(0, 10);
-        const expMs = new Date(expDate).getTime();
-        const shelfLifeDays = Math.max(1, Math.round((expMs - boughtMs) / 864e5));
+        const expDate = item.dateExpired || addDaysToLocalDate(tripDate, item.shelfLifeDays || 7);
+        const diffDays = diffCalendarDays(tripDate, expDate);
+        const shelfLifeDays = Math.max(1, diffDays);
 
         return {
           ...item,
@@ -344,7 +350,7 @@ export default function ScanReceiptModal({
     try {
       const receiptResult: ScannedReceiptResult = {
         storeName: 'Grocery Store',
-        tripDate: new Date(tripDate).toISOString(),
+        tripDate: toMiddayIso(tripDate),
         totalCost: calculatedTotal,
         items: cleanedItems,
       };
@@ -354,15 +360,6 @@ export default function ScanReceiptModal({
       Alert.alert('Save Failed', 'Could not save items to the shelf. Please try again.');
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const formatDisplayDate = (isoDate: string) => {
-    try {
-      const [y, m, d] = isoDate.split('-');
-      return `${m}/${d}/${y}`;
-    } catch {
-      return isoDate;
     }
   };
 
@@ -395,7 +392,7 @@ export default function ScanReceiptModal({
             /* Snap / Upload Choice Screen if no items yet */
             <View style={styles.dashedBox}>
               <View style={styles.receiptIconCircle}>
-                <Text style={{ fontSize: 28 }}>🧾</Text>
+                <ReceiptIcon size={28} color={Colors.terracotta} />
               </View>
               <Text style={styles.snapTitle}>Snap or upload receipt</Text>
               <Text style={styles.snapSubtitle}>
@@ -408,7 +405,7 @@ export default function ScanReceiptModal({
                   onPress={handleTakePhoto}
                   variant="primary"
                   size="large"
-                  icon={<Text style={{ fontSize: 20 }}>📷</Text>}
+                  icon={<CameraIcon size={20} color="#FFFFFF" />}
                 />
 
                 <StickerButton
@@ -416,7 +413,7 @@ export default function ScanReceiptModal({
                   onPress={handleUploadPhoto}
                   variant="secondary"
                   size="large"
-                  icon={<Text style={{ fontSize: 20 }}>🖼️</Text>}
+                  icon={<GalleryIcon size={20} color={Colors.ink} />}
                 />
               </View>
 
@@ -450,7 +447,7 @@ export default function ScanReceiptModal({
                   }}
                 >
                   <Text style={styles.datePickerText}>{formatDisplayDate(tripDate)}</Text>
-                  <Text style={{ fontSize: 16 }}>📅</Text>
+                  <CalendarIcon size={16} color={Colors.ink} />
                 </Pressable>
               </StickerCard>
 
@@ -475,58 +472,57 @@ export default function ScanReceiptModal({
                           animate={false}
                         />
 
-                        {/* Editable Name & Price */}
+                        {/* Editable Name, Price & Expired Date */}
                         <View style={styles.itemInputsCol}>
                           <TextInput
                             style={styles.itemNameInput}
+                            placeholder="Item name"
+                            placeholderTextColor={Colors.placeholder}
                             value={item.name}
                             onChangeText={(text) => handleUpdateItemName(idx, text)}
-                            placeholder="Item name (e.g. Milk)"
-                            placeholderTextColor={Colors.placeholder}
                           />
 
-                          <View style={styles.itemPriceRow}>
-                            <Text style={styles.currencyPrefix}>$</Text>
-                            <TextInput
-                              style={styles.itemPriceInput}
-                              value={rawPrices[idx] !== undefined ? rawPrices[idx] : (item.price > 0 ? item.price.toString() : '')}
-                              onChangeText={(text) => handleUpdateItemPrice(idx, text)}
-                              keyboardType="decimal-pad"
-                              placeholder="0.00"
-                              placeholderTextColor={Colors.placeholder}
-                            />
+                          <View style={styles.itemMetaRow}>
+                            <View style={styles.itemPriceRow}>
+                              <Text style={styles.currencyPrefix}>$</Text>
+                              <TextInput
+                                style={styles.itemPriceInput}
+                                placeholder="0.00"
+                                placeholderTextColor={Colors.placeholder}
+                                keyboardType="decimal-pad"
+                                value={rawPrices[idx] !== undefined ? rawPrices[idx] : (item.price > 0 ? item.price.toString() : '')}
+                                onChangeText={(text) => handleUpdateItemPrice(idx, text)}
+                              />
+                            </View>
+
+                            <Pressable
+                              style={styles.itemExpiryBtn}
+                              onPress={() => {
+                                setCalendarTarget({ type: 'itemExpiry', index: idx });
+                                setIsCalendarVisible(true);
+                              }}
+                            >
+                              <Text style={styles.itemExpiryLabel}>Expires:</Text>
+                              <Text
+                                style={[
+                                  styles.itemExpiryText,
+                                  !item.dateExpired && styles.placeholderText,
+                                ]}
+                              >
+                                {item.dateExpired ? formatDisplayDate(item.dateExpired) : 'Select date'}
+                              </Text>
+                              <CalendarIcon size={14} color={Colors.ink} />
+                            </Pressable>
                           </View>
                         </View>
 
-                        {/* Delete item button */}
+                        {/* Remove item button */}
                         <Pressable
                           style={styles.deleteBtn}
                           onPress={() => handleRemoveItem(idx)}
                           hitSlop={8}
                         >
                           <Text style={styles.deleteBtnText}>✕</Text>
-                        </Pressable>
-                      </View>
-
-                      {/* Date expired field (Categories removed) */}
-                      <View style={styles.itemExpiryRow}>
-                        <Text style={styles.itemExpiryLabel}>Date expired</Text>
-                        <Pressable
-                          style={styles.itemExpiryBtn}
-                          onPress={() => {
-                            setCalendarTarget({ type: 'itemExpiry', index: idx });
-                            setIsCalendarVisible(true);
-                          }}
-                        >
-                          <Text
-                            style={[
-                              styles.itemExpiryText,
-                              !item.dateExpired && styles.placeholderText,
-                            ]}
-                          >
-                            {item.dateExpired ? formatDisplayDate(item.dateExpired) : 'Select date'}
-                          </Text>
-                          <Text style={styles.calendarIconSmall}>📅</Text>
                         </Pressable>
                       </View>
                     </StickerCard>
@@ -542,11 +538,11 @@ export default function ScanReceiptModal({
               {/* Re-scan or change photo options */}
               <View style={styles.rescanRow}>
                 <Pressable onPress={handleTakePhoto} style={styles.rescanLink}>
-                  <Text style={styles.rescanLinkText}>📷 Retake photo</Text>
+                  <Text style={styles.rescanLinkText}>Retake photo</Text>
                 </Pressable>
                 <Text style={styles.rescanDivider}>•</Text>
                 <Pressable onPress={handleUploadPhoto} style={styles.rescanLink}>
-                  <Text style={styles.rescanLinkText}>🖼️ Choose another</Text>
+                  <Text style={styles.rescanLinkText}>Choose another</Text>
                 </Pressable>
               </View>
             </View>
@@ -778,6 +774,12 @@ const styles = StyleSheet.create({
   itemInputsCol: {
     flex: 1,
     gap: 4,
+  },
+  itemMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
   },
   itemNameInput: {
     fontFamily: Fonts.headingSemiBold,

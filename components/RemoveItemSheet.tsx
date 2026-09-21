@@ -1,10 +1,9 @@
-import React from 'react';
-import { View, Text, Modal, Pressable, StyleSheet } from 'react-native';
-import { Colors, Fonts } from '../constants/Theme';
-import StickerCard from './ui/StickerCard';
-import StickerButton from './ui/StickerButton';
-import FoodCharacter from './FoodCharacter';
-import { FridgeItemRow } from '../services/supabase/types';
+import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Colors, Fonts } from "../constants/Theme";
+import { FridgeItemRow } from "../services/supabase/types";
+import FoodCharacter from "./FoodCharacter";
+import StickerButton from "./ui/StickerButton";
+import StickerCard from "./ui/StickerCard";
 
 interface RemoveItemSheetProps {
   visible: boolean;
@@ -25,20 +24,33 @@ export default function RemoveItemSheet({
 
   // Calculate days since bought
   const boughtDate = new Date(item.date_bought);
-  const diffDays = Math.max(0, Math.floor((Date.now() - boughtDate.getTime()) / (24 * 36e5)));
+  const diffDays = Math.max(
+    0,
+    Math.floor((Date.now() - boughtDate.getTime()) / (24 * 36e5)),
+  );
   const boughtText =
     diffDays === 0
-      ? 'Bought today'
+      ? "Bought today"
       : diffDays === 1
-      ? 'Bought yesterday'
-      : `Bought ${diffDays} days ago`;
+        ? "Bought yesterday"
+        : `Bought ${diffDays} days ago`;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={onClose}
+    >
       <View style={styles.overlay}>
         <Pressable style={styles.backdrop} onPress={onClose} />
         <View style={styles.sheetContainer}>
-          <StickerCard backgroundColor={Colors.paper} shadowOffset={6} borderRadius={28} style={styles.card}>
+          <StickerCard
+            backgroundColor={Colors.paper}
+            shadowOffset={6}
+            borderRadius={28}
+            style={styles.card}
+          >
             {/* Grab handle indicator */}
             <View style={styles.handleBar} />
 
@@ -53,7 +65,9 @@ export default function RemoveItemSheet({
             </View>
 
             {/* Title & Subtext */}
-            <Text style={styles.title}>Remove the {item.name.toLowerCase()}?</Text>
+            <Text style={styles.title}>
+              Remove the {item.name.toLowerCase()}?
+            </Text>
             <Text style={styles.subtext}>
               {boughtText} · ${item.price.toFixed(2)}
             </Text>
@@ -66,18 +80,16 @@ export default function RemoveItemSheet({
                 variant="primary"
                 size="large"
               />
-              <Text style={styles.choiceSubtext}>Counts as wasted food</Text>
             </View>
 
             {/* Action 2: Remove, added by mistake */}
             <View style={styles.btnWrap}>
               <StickerButton
-                title="Remove, added by mistake"
+                title="Remove"
                 onPress={() => onRemoveMistake(item)}
                 variant="secondary"
                 size="large"
               />
-              <Text style={styles.choiceSubtext}>No record kept</Text>
             </View>
 
             {/* Action 3: Keep it */}
@@ -94,20 +106,20 @@ export default function RemoveItemSheet({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(62, 42, 30, 0.45)',
-    justifyContent: 'flex-end',
+    backgroundColor: "rgba(62, 42, 30, 0.45)",
+    justifyContent: "flex-end",
   },
   backdrop: {
     ...StyleSheet.absoluteFill,
   },
   sheetContainer: {
-    width: '100%',
+    width: "100%",
     paddingHorizontal: 16,
     paddingBottom: 24,
   },
   card: {
     padding: 24,
-    alignItems: 'center',
+    alignItems: "center",
   },
   handleBar: {
     width: 44,
@@ -123,24 +135,24 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.headingBold,
     fontSize: 22,
     color: Colors.ink,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 4,
   },
   subtext: {
     fontFamily: Fonts.bodySemiBold,
     fontSize: 15,
-    color: '#76665A',
+    color: "#76665A",
     marginBottom: 24,
   },
   btnWrap: {
-    width: '100%',
-    alignItems: 'center',
+    width: "100%",
+    alignItems: "center",
     marginBottom: 14,
   },
   choiceSubtext: {
     fontFamily: Fonts.bodyRegular,
     fontSize: 13,
-    color: '#76665A',
+    color: "#76665A",
     marginTop: 4,
   },
   keepBtn: {

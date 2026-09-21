@@ -139,7 +139,7 @@ export default function FeastsScreen() {
   const handleNudgeFriend = (name: string) => {
     const msg = `Confirmation: Nudge reminder sent to ${name}!`;
     setNudgeConfirmation(msg);
-    Alert.alert('Nudge Sent! 🔔', msg);
+    Alert.alert('Nudge Sent', msg);
     setTimeout(() => {
       setNudgeConfirmation(null);
     }, 4000);
@@ -288,11 +288,11 @@ export default function FeastsScreen() {
 
     addCustomFeast(newFeast);
     Alert.alert(
-      'Invites Sent! ✉️',
+      'Invites Sent',
       `Sent feast invites for "${activeRecipe.title}" (${scheduledDateTime})! You can track RSVPs in Meals.`,
       [
         {
-          text: 'Go to Meals 🍳',
+          text: 'Go to Meals',
           onPress: () => router.push('/(tabs)/meals'),
         },
       ]
@@ -334,7 +334,7 @@ export default function FeastsScreen() {
 
             <StickerButton
               title="+ Add a Friend"
-              onPress={() => router.push('/(tabs)/insights')}
+              onPress={() => router.push('/(tabs)/social')}
               variant="primary"
               size="large"
             />
@@ -522,7 +522,7 @@ export default function FeastsScreen() {
             {/* Schedule Feast: Date & Time Picker */}
             <View style={styles.scheduleCardWrap}>
               <StickerCard backgroundColor={Colors.paper} borderRadius={22} style={styles.scheduleCard}>
-                <Text style={styles.scheduleHeading}>Select feast date & time 📅</Text>
+                <Text style={styles.scheduleHeading}>Select feast date & time</Text>
                 <View style={styles.dateTimePresetsRow}>
                   {DATE_TIME_PRESETS.map((preset) => {
                     const isPicked = scheduledDateTime === preset;
@@ -560,7 +560,7 @@ export default function FeastsScreen() {
             {/* Bottom Button: Send out invite */}
             <View style={styles.ctaBottomWrap}>
               <StickerButton
-                title="Send out invite to friends ✉️"
+                title="Send out invite to friends"
                 onPress={handleSendInvite}
                 variant="primary"
                 size="large"
@@ -684,7 +684,7 @@ export default function FeastsScreen() {
                             },
                           ]}
                         >
-                          {isCanGo ? '✓ Can go' : isCannotGo ? '✕ Cannot go' : '⏳ Pending'}
+                          {isCanGo ? 'Can go' : isCannotGo ? 'Cannot go' : 'Pending'}
                         </Text>
                       </View>
 
@@ -692,7 +692,7 @@ export default function FeastsScreen() {
                         style={styles.nudgePillBtn}
                         onPress={() => handleNudgeFriend(friendName)}
                       >
-                        <Text style={styles.nudgePillBtnText}>Nudge 🔔</Text>
+                        <Text style={styles.nudgePillBtnText}>Nudge</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -734,14 +734,14 @@ export default function FeastsScreen() {
             {/* Action Buttons */}
             <View style={styles.waitingButtonsStack}>
               <StickerButton
-                title="Send reminder nudge to pending friends 🔔"
+                title="Send reminder nudge to pending friends"
                 onPress={() => handleNudgeFriend('friends')}
                 variant="secondary"
                 size="large"
               />
 
               <StickerButton
-                title="Start feast 🍳"
+                title="Start feast"
                 onPress={() => setCurrentStep('live')}
                 variant="primary"
                 size="large"

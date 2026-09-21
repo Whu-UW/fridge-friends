@@ -90,7 +90,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    alignSelf: 'flex-start',
+    alignSelf: 'center',
   },
   chipText: {
     fontFamily: Fonts.bodyBold,

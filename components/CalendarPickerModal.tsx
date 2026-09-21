@@ -6,6 +6,7 @@ import {
   Pressable,
   StyleSheet,
 } from 'react-native';
+import { parseLocalDateParts, getLocalDateString } from '../utils/dateUtils';
 
 interface CalendarPickerModalProps {
   visible: boolean;
@@ -27,19 +28,21 @@ export default function CalendarPickerModal({
   onSelectDate,
   onClose,
 }: CalendarPickerModalProps) {
-  // Parse initial selected date
-  const initialDate = selectedDate ? new Date(selectedDate) : new Date();
-  const validInitial = isNaN(initialDate.getTime()) ? new Date() : initialDate;
+  // Parse initial selected date without timezone drift
+  const parsedSelected = parseLocalDateParts(selectedDate);
+  const now = new Date();
+  const initialYear = parsedSelected ? parsedSelected.year : now.getFullYear();
+  const initialMonth = parsedSelected ? parsedSelected.month : now.getMonth();
 
-  const [viewYear, setViewYear] = useState(validInitial.getFullYear());
-  const [viewMonth, setViewMonth] = useState(validInitial.getMonth());
+  const [viewYear, setViewYear] = useState(initialYear);
+  const [viewMonth, setViewMonth] = useState(initialMonth);
 
   useEffect(() => {
     if (visible && selectedDate) {
-      const d = new Date(selectedDate);
-      if (!isNaN(d.getTime())) {
-        setViewYear(d.getFullYear());
-        setViewMonth(d.getMonth());
+      const parts = parseLocalDateParts(selectedDate);
+      if (parts) {
+        setViewYear(parts.year);
+        setViewMonth(parts.month);
       }
     }
   }, [visible, selectedDate]);
@@ -66,10 +69,10 @@ export default function CalendarPickerModal({
   const firstDayOfWeek = new Date(viewYear, viewMonth, 1).getDay();
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
 
-  const selectedDateObj = new Date(selectedDate);
-  const selectedYear = !isNaN(selectedDateObj.getTime()) ? selectedDateObj.getFullYear() : -1;
-  const selectedMonth = !isNaN(selectedDateObj.getTime()) ? selectedDateObj.getMonth() : -1;
-  const selectedDay = !isNaN(selectedDateObj.getTime()) ? selectedDateObj.getDate() : -1;
+  const selectedParts = parseLocalDateParts(selectedDate);
+  const selectedYear = selectedParts ? selectedParts.year : -1;
+  const selectedMonth = selectedParts ? selectedParts.month : -1;
+  const selectedDay = selectedParts ? selectedParts.day : -1;
 
   const today = new Date();
   const todayYear = today.getFullYear();
@@ -85,9 +88,7 @@ export default function CalendarPickerModal({
   };
 
   const handleSelectToday = () => {
-    const mm = String(todayMonth + 1).padStart(2, '0');
-    const dd = String(todayDay).padStart(2, '0');
-    onSelectDate(`${todayYear}-${mm}-${dd}`);
+    onSelectDate(getLocalDateString());
     onClose();
   };
 

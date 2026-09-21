@@ -195,46 +195,34 @@ export default function ShelfScreen() {
   }, [friends]);
 
   const handleFeastModePress = () => {
+    if (selectedItemIds.length === 0) {
+      Alert.alert(
+        "No Groceries Selected",
+        "Select ingredients first to plan a feast!",
+      );
+      return;
+    }
     if (mutualFriends.length === 0) {
       setIsFriendReqModalVisible(true);
     } else {
-      const targetIds =
-        selectedItemIds.length > 0
-          ? selectedItemIds
-          : categorizedItems
-              .filter(
-                (i) => i.urgencyStatus === "now" || i.urgencyStatus === "soon",
-              )
-              .map((i) => i.id);
       router.push({
         pathname: "/(tabs)/feasts",
-        params:
-          targetIds.length > 0 ? { itemIds: targetIds.join(",") } : undefined,
+        params: { itemIds: selectedItemIds.join(",") },
       });
     }
   };
 
   const handleRescuePress = () => {
-    let targetIds = selectedItemIds;
-    if (targetIds.length === 0) {
-      const atRisk = categorizedItems.filter(
-        (i) => i.urgencyStatus === "now" || i.urgencyStatus === "soon",
-      );
-      targetIds =
-        atRisk.length > 0
-          ? atRisk.map((i) => i.id)
-          : categorizedItems.slice(0, 3).map((i) => i.id);
-    }
-    if (targetIds.length === 0) {
+    if (selectedItemIds.length === 0) {
       Alert.alert(
-        "No Groceries",
-        "Stock your fridge first to rescue ingredients!",
+        "No Groceries Selected",
+        "Select ingredients first to rescue them!",
       );
       return;
     }
     router.push({
       pathname: "/rescue",
-      params: { itemIds: targetIds.join(",") },
+      params: { itemIds: selectedItemIds.join(",") },
     });
   };
 
@@ -342,7 +330,10 @@ export default function ShelfScreen() {
   }
 
   // Safe bottom padding preventing Android 3-button navigation bar overlap with stacked buttons
-  const safeBottomPadding = Math.max(insets.bottom, 16) + 160;
+  const safeBottomPadding =
+    selectedItemIds.length > 0
+      ? Math.max(insets.bottom, 16) + 160
+      : Math.max(insets.bottom, 16) + 40;
 
   return (
     <View style={styles.screen}>
@@ -555,8 +546,8 @@ export default function ShelfScreen() {
         )}
       </ScrollView>
 
-      {/* SECTION 5: Floating Bottom Action Buttons (Handover V2 Screen 4 & 5) */}
-      {!isViewingFriend && (
+      {/* SECTION 5: Floating Bottom Action Buttons (Only appear when ingredients are selected) */}
+      {!isViewingFriend && selectedItemIds.length > 0 && (
         <View
           style={[
             styles.bottomFloatingBar,
@@ -565,22 +556,14 @@ export default function ShelfScreen() {
         >
           <View style={styles.bottomButtonsStack}>
             <StickerButton
-              title={
-                isSelectMode && selectedItemIds.length > 0
-                  ? `Rescue ingredients [${selectedItemIds.length}]`
-                  : "Rescue ingredients"
-              }
+              title={`Rescue ingredients [${selectedItemIds.length}]`}
               onPress={handleRescuePress}
               variant="primary"
               size="large"
             />
 
             <StickerButton
-              title={
-                isSelectMode && selectedItemIds.length > 0
-                  ? `Feast mode [${selectedItemIds.length}]`
-                  : "Feast mode"
-              }
+              title={`Feast mode [${selectedItemIds.length}]`}
               onPress={handleFeastModePress}
               variant="secondary"
               size="large"
@@ -630,7 +613,7 @@ export default function ShelfScreen() {
         onClose={() => setIsFriendReqModalVisible(false)}
         onAddFriend={() => {
           setIsFriendReqModalVisible(false);
-          router.push("/(tabs)/insights");
+          router.push("/(tabs)/social");
         }}
       />
     </View>
@@ -907,6 +890,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.ink,
     textAlign: "center",
+    width: "100%",
     marginTop: 2,
   },
   woodenPlankWrapper: {

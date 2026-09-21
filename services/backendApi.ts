@@ -11,6 +11,7 @@ import {
   RecipeTaskRow,
 } from './supabase/types';
 import type { FriendEntry, FeastInvite, FeastFriendStatus } from '../context/AppContext';
+import { getLocalDateString } from '../utils/dateUtils';
 
 const rawBackendUrl =
   process.env.EXPO_PUBLIC_BACKEND_URL || 'https://fridge-friends-be-144bbbd9.fastapicloud.dev';
@@ -261,7 +262,7 @@ export function toFrontendFridgeItem(backendItem: BackendGroceryItem): FridgeIte
   }
 
   const purchasedAtIso = backendItem.purchased_on
-    ? new Date(`${backendItem.purchased_on}T00:00:00Z`).toISOString()
+    ? `${backendItem.purchased_on}T12:00:00.000Z`
     : backendItem.created_at;
 
   const isExpiring = shelfLifeDays <= 2;
@@ -320,7 +321,7 @@ export function toBackendGroceryItemCreate(
   if (dateBoughtIso) {
     purchased_on = dateBoughtIso.slice(0, 10);
   } else {
-    purchased_on = new Date().toISOString().slice(0, 10);
+    purchased_on = getLocalDateString();
   }
 
   return {

@@ -162,7 +162,7 @@ export default function FriendFridgeScreen() {
             {/* Hint Notice Card */}
             <View style={styles.noticeWrap}>
               <Text style={styles.noticeText}>
-                ✨ You can invite {firstName} to Feast Mode to combine your ingredients and rescue food together!
+                You can invite {firstName} to Feast Mode to combine your ingredients and rescue food together!
               </Text>
             </View>
 

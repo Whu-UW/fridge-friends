@@ -84,7 +84,7 @@ export default function MealsScreen() {
     nudgeFeastFriend(feastId, friendId);
     const msg = `Nudge reminder sent to ${friendName}!`;
     setNudgeMessage(msg);
-    Alert.alert('Nudge Sent! 🔔', msg);
+    Alert.alert('Nudge Sent', msg);
     setTimeout(() => {
       setNudgeMessage(null);
     }, 4000);
@@ -92,12 +92,12 @@ export default function MealsScreen() {
 
   const handleStartFeast = (feastId: string) => {
     startFeastCooking(feastId);
-    Alert.alert('Feast Started! 🍳', 'Everyone has gathered — cooking is now underway!');
+    Alert.alert('Feast Started', 'Everyone has gathered — cooking is now underway!');
   };
 
   const handleAcceptInvite = (feast: FeastInvite) => {
     respondToFeastInvite(feast.id, 'accepted');
-    Alert.alert('Invite Accepted! 🎉', `You joined ${feast.partyName}!`);
+    Alert.alert('Invite Accepted', `You joined ${feast.partyName}!`);
   };
 
   const handleDeclineInvite = (feast: FeastInvite) => {
@@ -176,7 +176,7 @@ export default function MealsScreen() {
                   activeSegment === 'feasts' && styles.dropdownItemTextActive,
                 ]}
               >
-                🍳 Feasts ({pendingFeasts.length + cookingFeasts.length})
+                Feasts ({pendingFeasts.length + cookingFeasts.length})
               </Text>
             </Pressable>
             <Pressable
@@ -195,7 +195,7 @@ export default function MealsScreen() {
                   activeSegment === 'saved' && styles.dropdownItemTextActive,
                 ]}
               >
-                📖 Personal ({savedRecipes.length})
+                Personal ({savedRecipes.length})
               </Text>
             </Pressable>
           </View>
@@ -224,7 +224,7 @@ export default function MealsScreen() {
             {/* 1. RESPOND TO INVITE SECTION */}
             {incomingInvites.length > 0 && (
               <View style={styles.sectionBlock}>
-                <Text style={styles.sectionHeading}>Respond to Invite ✉️</Text>
+                <Text style={styles.sectionHeading}>Respond to Invite</Text>
                 {incomingInvites.map((invite) => {
                   const isAccepted =
                     invite.userRsvpStatus === 'accepted' ||
@@ -243,14 +243,14 @@ export default function MealsScreen() {
                         /* Handover V2 Screen 14: You're In! Confirmed Feast View */
                         <View style={styles.acceptedInviteWrap}>
                           <View style={styles.youreInBanner}>
-                            <Text style={styles.youreInTitle}>🎉 You're in!</Text>
+                            <Text style={styles.youreInTitle}>You're in!</Text>
                             <Text style={styles.youreInSubtitle}>
                               See you {invite.scheduledFor || 'tonight at 7:00 PM'}
                             </Text>
                           </View>
 
                           <Text style={styles.inviteRecipeTitle}>
-                            🍳 {invite.recipeTitle} ({invite.cookTime || '25 min'})
+                            {invite.recipeTitle} ({invite.cookTime || '25 min'})
                           </Text>
 
                           {invite.bringBreakdown && invite.bringBreakdown.length > 0 && (
@@ -309,7 +309,7 @@ export default function MealsScreen() {
                           </View>
 
                           <Text style={styles.inviteRecipeTitle}>
-                            🍳 {invite.recipeTitle} ({invite.cookTime || '25 min'})
+                            {invite.recipeTitle} ({invite.cookTime || '25 min'})
                           </Text>
 
                           {/* Who's bringing what breakdown */}
@@ -328,14 +328,14 @@ export default function MealsScreen() {
                           {/* Handover V2 Screen 13: Reassurance freshness note */}
                           <View style={styles.reassurancePill}>
                             <Text style={styles.reassuranceText}>
-                              🌱 Your ingredients will still be good then
+                              Your ingredients will still be good then
                             </Text>
                           </View>
 
                           <View style={styles.inviteActionsRow}>
                             <View style={{ flex: 1 }}>
                               <StickerButton
-                                title="I'm in! 🎉"
+                                title="I'm in!"
                                 onPress={() => handleAcceptInvite(invite)}
                                 variant="primary"
                                 size="large"
@@ -385,7 +385,7 @@ export default function MealsScreen() {
                         </Text>
                       </View>
                       <View style={styles.statusPillPending}>
-                        <Text style={styles.statusPillPendingText}>⏳ Waiting</Text>
+                        <Text style={styles.statusPillPendingText}>Waiting</Text>
                       </View>
                     </View>
 
@@ -402,9 +402,9 @@ export default function MealsScreen() {
                             <View style={styles.friendInfoCol}>
                               <Text style={styles.rsvpFriendName}>{friend.name}</Text>
                               <Text style={styles.rsvpFriendStatus}>
-                                {isCanGo && '✓ Can go'}
-                                {isCannotGo && '✕ Cannot go'}
-                                {isPending && '⏳ Pending RSVP'}
+                                {isCanGo && 'Can go'}
+                                {isCannotGo && 'Cannot go'}
+                                {isPending && 'Pending RSVP'}
                               </Text>
                             </View>
 
@@ -413,7 +413,7 @@ export default function MealsScreen() {
                                 style={styles.nudgeButton}
                                 onPress={() => handleNudge(feast.id, friend.id, friend.name)}
                               >
-                                <Text style={styles.nudgeButtonText}>Nudge 🔔</Text>
+                                <Text style={styles.nudgeButtonText}>Nudge</Text>
                               </Pressable>
                             )}
                           </View>
@@ -424,7 +424,7 @@ export default function MealsScreen() {
                     {/* Start Feast Button */}
                     <View style={styles.startFeastWrap}>
                       <StickerButton
-                        title="Start feast 🍳"
+                        title="Start feast"
                         onPress={() => handleStartFeast(feast.id)}
                         variant="primary"
                         size="medium"
@@ -463,7 +463,7 @@ export default function MealsScreen() {
                         </Text>
                       </View>
                       <View style={styles.statusPillCooking}>
-                        <Text style={styles.statusPillCookingText}>🍳 Cooking</Text>
+                        <Text style={styles.statusPillCookingText}>Cooking</Text>
                       </View>
                     </View>
 
@@ -503,13 +503,13 @@ export default function MealsScreen() {
                           style={[styles.outcomeBtn, styles.rescuedBtn]}
                           onPress={() => handleMarkRescued(feast)}
                         >
-                          <Text style={styles.rescuedBtnText}>We ate it! Rescued 🌟</Text>
+                          <Text style={styles.rescuedBtnText}>We ate it! Rescued</Text>
                         </Pressable>
                         <Pressable
                           style={[styles.outcomeBtn, styles.failedBtn]}
                           onPress={() => handleMarkFailed(feast)}
                         >
-                          <Text style={styles.failedBtnText}>Didn't work out 🥀</Text>
+                          <Text style={styles.failedBtnText}>Didn't work out</Text>
                         </Pressable>
                       </View>
                     </View>
@@ -548,7 +548,7 @@ export default function MealsScreen() {
                           ]}
                         >
                           <Text style={styles.outcomeBadgeText}>
-                            {wasRescued ? 'Rescued 🌟' : "Didn't work out 🥀"}
+                            {wasRescued ? 'Rescued' : "Didn't work out"}
                           </Text>
                         </View>
                       </View>
@@ -574,7 +574,7 @@ export default function MealsScreen() {
                 </Text>
                 <View style={{ marginTop: 20, width: '100%' }}>
                   <StickerButton
-                    title="Go to Shelf 🏠"
+                    title="Go to Shelf"
                     onPress={() => router.push('/(tabs)')}
                     variant="primary"
                     size="large"
@@ -605,16 +605,16 @@ export default function MealsScreen() {
                           <Text style={styles.recipeTitle}>{recipe.title}</Text>
                           <View style={styles.metaRow}>
                             <Text style={styles.metaPill}>
-                              ⏱️ {recipe.cookTime || '25 min'}
+                              {recipe.cookTime || '25 min'}
                             </Text>
                             {dollarsSaved > 0 && (
                               <Text style={[styles.metaPill, styles.savingsPill]}>
-                                💰 Saves ${dollarsSaved}
+                                Saves about ${dollarsSaved}
                               </Text>
                             )}
                             {recipe.cookingTasks && recipe.cookingTasks.length > 0 && (
                               <Text style={styles.metaPill}>
-                                📋 {recipe.cookingTasks.length} steps
+                                {recipe.cookingTasks.length} steps
                               </Text>
                             )}
                           </View>
@@ -645,7 +645,7 @@ export default function MealsScreen() {
                       {/* Action CTA */}
                       <View style={styles.cardActions}>
                         <StickerButton
-                          title="Cook & Check In 👩‍🍳"
+                          title="Cook & Check In"
                           onPress={() => router.push(`/recipe/${recipe.id}`)}
                           variant="primary"
                           size="medium"

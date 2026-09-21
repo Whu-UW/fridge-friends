@@ -16,6 +16,7 @@ import { useApp, FriendEntry } from '../../context/AppContext';
 import { Colors, Fonts } from '../../constants/Theme';
 import StickerCard from '../../components/ui/StickerCard';
 import StickerButton from '../../components/ui/StickerButton';
+import { LockIcon } from '../../components/ui/AppIcons';
 import { getDaysLeft } from '../../services/foodCharacterLookup';
 
 export default function SocialScreen() {
@@ -50,7 +51,7 @@ export default function SocialScreen() {
       addFriend(trimmed);
       setInviteUserId('');
       Alert.alert(
-        'Invite Sent! 🎉',
+        'Invite Sent',
         `Friend request sent to @${trimmed}. Once accepted, you can view each other's fridges and cook feasts!`
       );
     } catch {
@@ -102,7 +103,7 @@ export default function SocialScreen() {
       {/* Header */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) + 12 }]}>
         <View>
-          <Text style={styles.headerTitle}>Friends 👥</Text>
+          <Text style={styles.headerTitle}>Friends</Text>
           <Text style={styles.headerSubtitle}>
             Inspect fridges and cook together to end waste
           </Text>
@@ -146,7 +147,7 @@ export default function SocialScreen() {
 
           {/* Handover V2 Screen 15: Privacy Disclosure */}
           <View style={styles.privacyNoteWrap}>
-            <Text style={styles.privacyNoteIcon}>🔒</Text>
+            <LockIcon size={16} color="#76665A" />
             <Text style={styles.privacyNoteText}>
               Friends can see your yellow and red buddies so they can cook with you. Prices stay private.
             </Text>

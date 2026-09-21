@@ -24,7 +24,7 @@ export default function FeastFriendRequirementModal({
     if (onAddFriend) {
       onAddFriend();
     } else {
-      router.push('/(tabs)/insights');
+      router.push('/(tabs)/social');
     }
   };
 
