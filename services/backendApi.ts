@@ -449,10 +449,11 @@ export function toFrontendFeast(
 
       return {
         id: String(attendee.user_id),
-        name: attendee.name,
+        name: attendee.name || `user_${attendee.user_id}`,
         username: attendee.username || `user_${attendee.user_id}`,
         avatarUrl: getUserAvatar(attendee.user_id, attendee.name),
         status,
+        hasConfirmed: status !== 'pending',
       };
     });
 
