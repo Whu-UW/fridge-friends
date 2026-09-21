@@ -25,6 +25,7 @@ export default function SignUpScreen() {
   const { signUp } = useApp();
 
   const [selectedBuddyIndex, setSelectedBuddyIndex] = useState(3); // Carl by default per canvas
+  const [name, setName] = useState('');
   const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -47,7 +48,8 @@ export default function SignUpScreen() {
       const user = await signUp(
         cleanUserId,
         password,
-        selectedBuddy.name.toLowerCase() as BackendBuddy
+        selectedBuddy.name.toLowerCase() as BackendBuddy,
+        name.trim() || undefined
       );
 
       // Advance to "Get to know you"
@@ -57,6 +59,7 @@ export default function SignUpScreen() {
           buddyKey: selectedBuddy.key,
           buddyName: selectedBuddy.name,
           userId: String(user.id),
+          displayName: name.trim() || cleanUserId,
         },
       });
     } catch (err: any) {
@@ -106,8 +109,23 @@ export default function SignUpScreen() {
 
       <Text style={styles.buddyBioText}>Meet {selectedBuddy.desc}</Text>
 
-      {/* Inputs: User ID & Password */}
+      {/* Inputs: Name, User ID & Password */}
       <View style={styles.inputsStack}>
+        <View>
+          <Text style={styles.inputLabel}>Name</Text>
+          <View style={styles.inputWrap}>
+            <TextInput
+              style={styles.textInput}
+              placeholder="Your name, e.g. Maya Lin"
+              placeholderTextColor={Colors.placeholder}
+              value={name}
+              onChangeText={setName}
+              autoCapitalize="words"
+              autoCorrect={false}
+            />
+          </View>
+        </View>
+
         <View>
           <Text style={styles.inputLabel}>Username</Text>
           <View style={styles.inputWrap}>

@@ -65,9 +65,9 @@ export interface FeastInvite {
   /** The signed-in user's own RSVP for this feast */
   userRsvpStatus?: 'host' | 'pending' | 'accepted' | 'declined';
   /** Who is bringing what, derived from the recipe's ingredients */
-  bringBreakdown?: { who: string; items: string }[];
+  bringBreakdown?: { who: string; items: string; avatarUrl?: string }[];
   /** Numbered steps shown while the feast is cooking */
-  cookingTasks?: { step_number: number; instruction: string }[];
+  cookingTasks?: { step_number?: number; instruction: string; assignedTo?: string }[];
   /** How the feast ended. Local only: the backend has no feast outcome yet. */
   outcome?: 'rescued' | 'failed';
   createdAt: string;
@@ -102,7 +102,12 @@ interface AppContextType {
   testBackendDiagnostics: () => Promise<ConnectionDiagnosticResult>;
   // Auth State & Actions (FastAPI /auth endpoints)
   isLoggedIn: boolean;
-  signUp: (username: string, password: string, buddy: BackendBuddy) => Promise<BackendUser>;
+  signUp: (
+    username: string,
+    password: string,
+    buddy: BackendBuddy,
+    displayName?: string
+  ) => Promise<BackendUser>;
   signIn: (username: string, password: string) => Promise<BackendUser>;
   logout: () => Promise<void>;
   changeUsername: (newUsername: string) => Promise<void>;
@@ -968,8 +973,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     await refreshBackendData(user.id);
   };
 
-  const signUp = async (username: string, password: string, buddy: BackendBuddy) => {
+  const signUp = async (
+    username: string,
+    password: string,
+    buddy: BackendBuddy,
+    displayName?: string
+  ) => {
     const user = await backendApi.signup(username.trim(), password, buddy);
+    if (displayName && displayName.trim()) {
+      try {
+        const updated = await backendApi.updateUser(user.id, {
+          name: displayName.trim(),
+        });
+        user.name = updated.name;
+      } catch (e) {
+        console.warn('Could not set display name on signup:', e);
+      }
+    }
     await startSession(user);
     return user;
   };
@@ -1920,6 +1940,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       fridgeItems,
       shoppingTrips,
       recipes,
+      savedRecipes,
       feasts,
       backendConnected,
       isSyncing,
@@ -1947,7 +1968,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       tossFridgeItem,
       recordRescuedMeal,
       recordWastedMeal,
-      savedRecipes,
       saveRecipe,
       removeSavedRecipe,
       addCustomFeast,
@@ -1988,6 +2008,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       fridgeItems,
       shoppingTrips,
       recipes,
+      savedRecipes,
       backendConnected,
       isSyncing,
       backendSyncAttempted,
@@ -2000,7 +2021,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       isFeastsHardcoded,
       isRecipesHardcoded,
       isLoggedIn,
-      savedRecipes,
       feastOverlays,
     ]
   );

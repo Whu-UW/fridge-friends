@@ -33,6 +33,7 @@ export default function MealsScreen() {
 
   // Tab segment: 'feasts' (default) vs 'saved'
   const [activeSegment, setActiveSegment] = useState<'feasts' | 'saved'>('feasts');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   // Nudge banner state
   const [nudgeMessage, setNudgeMessage] = useState<string | null>(null);
@@ -128,52 +129,77 @@ export default function MealsScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* Header (Handover V2 Screens 11 & 12: Dropdown Selector) */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) + 12 }]}>
-        <View>
-          <Text style={styles.headerTitle}>Meals 🍳</Text>
-          <Text style={styles.headerSubtitle}>
-            {activeSegment === 'feasts'
-              ? 'Group feasts & cooking in progress'
-              : 'Your saved recipes to cook'}
-          </Text>
+        <View style={styles.headerTopRow}>
+          <Pressable
+            style={styles.dropdownTrigger}
+            onPress={() => setIsDropdownOpen((prev) => !prev)}
+            hitSlop={8}
+          >
+            <Text style={styles.dropdownTitle}>
+              Meals: {activeSegment === 'feasts' ? 'Feasts' : 'Personal'} ▾
+            </Text>
+          </Pressable>
+
+          <View style={styles.headerCountBadge}>
+            <Text style={styles.headerCountBadgeText}>
+              {activeSegment === 'feasts'
+                ? pendingFeasts.length + cookingFeasts.length
+                : savedRecipes.length}
+            </Text>
+          </View>
         </View>
 
-        {/* Segmented Control */}
-        <View style={styles.segmentToggle}>
-          <Pressable
-            style={[
-              styles.segmentBtn,
-              activeSegment === 'feasts' && styles.segmentBtnActive,
-            ]}
-            onPress={() => setActiveSegment('feasts')}
-          >
-            <Text
+        <Text style={styles.headerSubtitle}>
+          {activeSegment === 'feasts'
+            ? 'Group cooking plans'
+            : 'Recipes you saved to cook solo'}
+        </Text>
+
+        {/* Dropdown Menu Popover */}
+        {isDropdownOpen && (
+          <View style={styles.dropdownMenu}>
+            <Pressable
               style={[
-                styles.segmentBtnText,
-                activeSegment === 'feasts' && styles.segmentBtnTextActive,
+                styles.dropdownItem,
+                activeSegment === 'feasts' && styles.dropdownItemActive,
               ]}
+              onPress={() => {
+                setActiveSegment('feasts');
+                setIsDropdownOpen(false);
+              }}
             >
-              Feasts ({pendingFeasts.length + cookingFeasts.length})
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[
-              styles.segmentBtn,
-              activeSegment === 'saved' && styles.segmentBtnActive,
-            ]}
-            onPress={() => setActiveSegment('saved')}
-          >
-            <Text
+              <Text
+                style={[
+                  styles.dropdownItemText,
+                  activeSegment === 'feasts' && styles.dropdownItemTextActive,
+                ]}
+              >
+                🍳 Feasts ({pendingFeasts.length + cookingFeasts.length})
+              </Text>
+            </Pressable>
+            <Pressable
               style={[
-                styles.segmentBtnText,
-                activeSegment === 'saved' && styles.segmentBtnTextActive,
+                styles.dropdownItem,
+                activeSegment === 'saved' && styles.dropdownItemActive,
               ]}
+              onPress={() => {
+                setActiveSegment('saved');
+                setIsDropdownOpen(false);
+              }}
             >
-              Saved ({savedRecipes.length})
-            </Text>
-          </Pressable>
-        </View>
+              <Text
+                style={[
+                  styles.dropdownItemText,
+                  activeSegment === 'saved' && styles.dropdownItemTextActive,
+                ]}
+              >
+                📖 Personal ({savedRecipes.length})
+              </Text>
+            </Pressable>
+          </View>
+        )}
       </View>
 
       {/* Nudge Confirmation Message Banner */}
@@ -199,58 +225,135 @@ export default function MealsScreen() {
             {incomingInvites.length > 0 && (
               <View style={styles.sectionBlock}>
                 <Text style={styles.sectionHeading}>Respond to Invite ✉️</Text>
-                {incomingInvites.map((invite) => (
-                  <StickerCard
-                    key={invite.id}
-                    backgroundColor="#FFF8E7"
-                    borderRadius={22}
-                    style={styles.inviteCard}
-                  >
-                    <View style={styles.inviteHeader}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.invitePartyName}>{invite.partyName}</Text>
-                        <Text style={styles.inviteHost}>Hosted by {invite.hostName}</Text>
-                      </View>
-                      <View style={styles.inviteTimeBadge}>
-                        <Text style={styles.inviteTimeBadgeText}>
-                          {invite.scheduledFor || 'Tonight'}
-                        </Text>
-                      </View>
-                    </View>
+                {incomingInvites.map((invite) => {
+                  const isAccepted =
+                    invite.userRsvpStatus === 'accepted' ||
+                    invite.invitedFriends.some(
+                      (f) => f.id === currentUser.id && f.status === 'accepted'
+                    );
 
-                    <Text style={styles.inviteRecipeTitle}>
-                      🍳 {invite.recipeTitle} ({invite.cookTime || '25 min'})
-                    </Text>
+                  return (
+                    <StickerCard
+                      key={invite.id}
+                      backgroundColor="#FFF8E7"
+                      borderRadius={22}
+                      style={styles.inviteCard}
+                    >
+                      {isAccepted ? (
+                        /* Handover V2 Screen 14: You're In! Confirmed Feast View */
+                        <View style={styles.acceptedInviteWrap}>
+                          <View style={styles.youreInBanner}>
+                            <Text style={styles.youreInTitle}>🎉 You're in!</Text>
+                            <Text style={styles.youreInSubtitle}>
+                              See you {invite.scheduledFor || 'tonight at 7:00 PM'}
+                            </Text>
+                          </View>
 
-                    {/* Who's bringing what breakdown */}
-                    {invite.bringBreakdown && invite.bringBreakdown.length > 0 && (
-                      <View style={styles.bringBox}>
-                        <Text style={styles.bringBoxHeading}>Who's bringing what:</Text>
-                        {invite.bringBreakdown.map((item, bIdx) => (
-                          <Text key={bIdx} style={styles.bringLine}>
-                            <Text style={styles.bringWho}>{item.who}: </Text>
-                            {item.items}
+                          <Text style={styles.inviteRecipeTitle}>
+                            🍳 {invite.recipeTitle} ({invite.cookTime || '25 min'})
                           </Text>
-                        ))}
-                      </View>
-                    )}
 
-                    <View style={styles.inviteActionsRow}>
-                      <Pressable
-                        style={[styles.inviteActionBtn, styles.acceptBtn]}
-                        onPress={() => handleAcceptInvite(invite)}
-                      >
-                        <Text style={styles.acceptBtnText}>✓ Accept</Text>
-                      </Pressable>
-                      <Pressable
-                        style={[styles.inviteActionBtn, styles.declineBtn]}
-                        onPress={() => handleDeclineInvite(invite)}
-                      >
-                        <Text style={styles.declineBtnText}>✕ Decline</Text>
-                      </Pressable>
-                    </View>
-                  </StickerCard>
-                ))}
+                          {invite.bringBreakdown && invite.bringBreakdown.length > 0 && (
+                            <View style={styles.bringBox}>
+                              <Text style={styles.bringBoxHeading}>Who's bringing what:</Text>
+                              {invite.bringBreakdown.map((item, bIdx) => (
+                                <Text key={bIdx} style={styles.bringLine}>
+                                  <Text style={styles.bringWho}>{item.who}: </Text>
+                                  {item.items}
+                                </Text>
+                              ))}
+                            </View>
+                          )}
+
+                          <Text style={styles.confirmedAttendeesHeading}>
+                            Confirmed attendees:
+                          </Text>
+                          <View style={styles.confirmedAttendeesRow}>
+                            {invite.invitedFriends
+                              .filter((f) => f.status === 'accepted')
+                              .map((f) => (
+                                <View key={f.id} style={styles.attendeePill}>
+                                  <Text style={styles.attendeePillCheck}>✓</Text>
+                                  <Text style={styles.attendeePillName}>
+                                    {f.name.split(' ')[0]}
+                                  </Text>
+                                </View>
+                              ))}
+                          </View>
+
+                          <Pressable
+                            style={styles.cantMakeItBtn}
+                            onPress={() => handleDeclineInvite(invite)}
+                            hitSlop={8}
+                          >
+                            <Text style={styles.cantMakeItText}>
+                              Can't make it? Let them know
+                            </Text>
+                          </Pressable>
+                        </View>
+                      ) : (
+                        /* Handover V2 Screen 13: Incoming Feast Invite Card */
+                        <>
+                          <View style={styles.inviteHeader}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.inviteHost}>
+                                {invite.hostName} invited you to a feast!
+                              </Text>
+                              <Text style={styles.invitePartyName}>{invite.partyName}</Text>
+                            </View>
+                            <View style={styles.inviteTimeBadge}>
+                              <Text style={styles.inviteTimeBadgeText}>
+                                {invite.scheduledFor || 'Tonight'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <Text style={styles.inviteRecipeTitle}>
+                            🍳 {invite.recipeTitle} ({invite.cookTime || '25 min'})
+                          </Text>
+
+                          {/* Who's bringing what breakdown */}
+                          {invite.bringBreakdown && invite.bringBreakdown.length > 0 && (
+                            <View style={styles.bringBox}>
+                              <Text style={styles.bringBoxHeading}>Who's bringing what:</Text>
+                              {invite.bringBreakdown.map((item, bIdx) => (
+                                <Text key={bIdx} style={styles.bringLine}>
+                                  <Text style={styles.bringWho}>{item.who}: </Text>
+                                  {item.items}
+                                </Text>
+                              ))}
+                            </View>
+                          )}
+
+                          {/* Handover V2 Screen 13: Reassurance freshness note */}
+                          <View style={styles.reassurancePill}>
+                            <Text style={styles.reassuranceText}>
+                              🌱 Your ingredients will still be good then
+                            </Text>
+                          </View>
+
+                          <View style={styles.inviteActionsRow}>
+                            <View style={{ flex: 1 }}>
+                              <StickerButton
+                                title="I'm in! 🎉"
+                                onPress={() => handleAcceptInvite(invite)}
+                                variant="primary"
+                                size="large"
+                              />
+                            </View>
+                            <Pressable
+                              style={styles.declineLinkBtn}
+                              onPress={() => handleDeclineInvite(invite)}
+                              hitSlop={8}
+                            >
+                              <Text style={styles.declineLinkText}>Can't make it</Text>
+                            </Pressable>
+                          </View>
+                        </>
+                      )}
+                    </StickerCard>
+                  );
+                })}
               </View>
             )}
 
@@ -604,9 +707,34 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: Colors.ink,
   },
-  headerTitle: {
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  dropdownTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 4,
+  },
+  dropdownTitle: {
     fontFamily: Fonts.headingBold,
-    fontSize: 26,
+    fontSize: 24,
+    color: Colors.ink,
+  },
+  headerCountBadge: {
+    backgroundColor: '#F0EAE1',
+    borderWidth: 1.5,
+    borderColor: Colors.ink,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  headerCountBadgeText: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 13,
     color: Colors.ink,
   },
   headerSubtitle: {
@@ -614,7 +742,127 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#7A685D',
     marginTop: 2,
+    marginBottom: 4,
+  },
+  dropdownMenu: {
+    marginTop: 10,
+    backgroundColor: Colors.paper,
+    borderWidth: 2,
+    borderColor: Colors.ink,
+    borderRadius: 16,
+    padding: 6,
+    shadowColor: Colors.ink,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 5,
+    gap: 4,
+  },
+  dropdownItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
+  dropdownItemActive: {
+    backgroundColor: '#F0EAE1',
+  },
+  dropdownItemText: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 14,
+    color: '#7A685D',
+  },
+  dropdownItemTextActive: {
+    color: Colors.ink,
+  },
+  reassurancePill: {
+    backgroundColor: '#E8F5E9',
+    borderWidth: 1.5,
+    borderColor: '#A5D6A7',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 10,
     marginBottom: 12,
+  },
+  reassuranceText: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 13,
+    color: '#2E7D32',
+  },
+  declineLinkBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  declineLinkText: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 14,
+    color: '#8A776A',
+    textDecorationLine: 'underline',
+  },
+  acceptedInviteWrap: {
+    gap: 12,
+  },
+  youreInBanner: {
+    backgroundColor: '#EBF3E8',
+    borderWidth: 1.5,
+    borderColor: Colors.ink,
+    borderRadius: 14,
+    padding: 12,
+    alignItems: 'center',
+  },
+  youreInTitle: {
+    fontFamily: Fonts.headingBold,
+    fontSize: 18,
+    color: '#2E5A36',
+  },
+  youreInSubtitle: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 13,
+    color: '#4A6B50',
+    marginTop: 2,
+  },
+  confirmedAttendeesHeading: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 13,
+    color: '#7A685D',
+  },
+  confirmedAttendeesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  attendeePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F0EAE1',
+    borderWidth: 1,
+    borderColor: Colors.ink,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  attendeePillCheck: {
+    color: '#2E7D32',
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
+  attendeePillName: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 12,
+    color: Colors.ink,
+  },
+  cantMakeItBtn: {
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  cantMakeItText: {
+    fontFamily: Fonts.headingSemiBold,
+    fontSize: 13,
+    color: '#8A776A',
+    textDecorationLine: 'underline',
   },
   segmentToggle: {
     flexDirection: 'row',
