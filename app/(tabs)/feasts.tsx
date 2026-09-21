@@ -316,7 +316,7 @@ export default function FeastsScreen() {
       partyName: `${currentUser.display_name.split(' ')[0]}'s Feast Mode`,
       hostId: currentUser.id,
       hostName: currentUser.display_name,
-      candidateRecipes: [{ recipe: activeRecipe, votes: [] }],
+      candidateRecipes: [{ recipe: activeRecipe as any, votes: [] }],
       recipeId: activeRecipe.id,
       recipeTitle: activeRecipe.title,
       cookTime: activeRecipe.cookTime,

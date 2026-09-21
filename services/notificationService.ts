@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+import { Platform, Alert } from 'react-native';
 
 /**
  * Registers the device for push notifications and returns the Expo push token.
@@ -9,9 +9,22 @@ import { Platform } from 'react-native';
  * @returns {Promise<string | null>} The Expo push token or null if permission was denied or project ID is missing.
  */
 export async function registerForPushNotifications(): Promise<string | null> {
+  const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+  
   if (!Device.isDevice) {
+    Alert.alert(
+      'Push Notifications Disabled',
+      'Must use a physical device for Push Notifications.'
+    );
     console.warn('Must use physical device for Push Notifications');
     return null;
+  }
+
+  if (isExpoGo) {
+    Alert.alert(
+      'Push Notifications Disabled',
+      'Push notifications are not fully supported in Expo Go. Please use a development build.'
+    );
   }
 
   const { status: existingStatus } = await Notifications.getPermissionsAsync();

@@ -669,6 +669,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         const jsonErr = JSON.parse(text);
         if (typeof jsonErr.detail === 'string' && jsonErr.detail.trim()) {
           errorMsg = jsonErr.detail;
+        } else if (Array.isArray(jsonErr.detail) && jsonErr.detail.length > 0) {
+          // Handle FastAPI validation error arrays
+          const msgs = jsonErr.detail.map((err: any) => err.msg).filter(Boolean);
+          if (msgs.length > 0) {
+            errorMsg = msgs.join(', ');
+          }
         }
       } catch {
         // Not JSON; nothing safe to show
