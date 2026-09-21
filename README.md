@@ -142,15 +142,6 @@ npx eas-cli build --profile preview --platform android
 
 The project ID in `app.json` points at an existing Expo project, so you need access to it to build. If you are working from a fork, run `npx eas-cli init` to link your own project first.
 
-## Known gaps
-
-- Recipes are templates. `services/llmService.ts` fills a handful of fixed recipes with the names of your ingredients. It is shaped like an LLM client so a real model can replace it, but nothing calls one yet. The same file holds a keyword table that guesses a shelf life for items that arrive without an expiry date.
-- Recipes ignore diets, foods to avoid and cuisines. The app collects them and saves them to the backend, but recipe suggestions do not use them yet. The "Matches everyone's preferences" label on the feast recipe screen is static text.
-- Feast chat is a local mock. Messages stay on your device, and the conversation starts with sample text.
-- Feast outcomes and saved recipes are stored on the device. The backend has no place for them yet, so they do not follow you to another phone.
-- The app needs the backend. If it cannot reach the API, the fridge, friends and feasts lists come up empty.
-- `services/supabase/` has a Supabase client and auth helpers that no screen uses. Accounts go through the FastAPI backend, and only the row types in `services/supabase/types.ts` are in use.
-
 ## Design docs
 
 `ui fridge friends/fridge-friends-handover/docs/design/` has the original design handover. [handover.md](ui%20fridge%20friends/fridge-friends-handover/docs/design/handover.md) covers the design system, character kit, motion, screen flows, data model and freshness rules. `character-demo.html` is an animated demo of every character and mood, and `screens.pdf` shows all the screens. It is a snapshot from September 19, 2026, and the app has moved on in places. The Shelf, for one, is now the Fridge tab.
